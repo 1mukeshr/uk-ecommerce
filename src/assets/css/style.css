@@ -1200,22 +1200,6 @@ code {
   margin: 0;
 }
 
-.auth-demo-note {
-  margin-top: 12px !important;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #fff5f9;
-  border: 1px solid #f4d4e2;
-  color: var(--text-secondary) !important;
-  font-size: 0.8rem !important;
-  line-height: 1.45;
-  text-align: left;
-}
-
-.auth-demo-note strong {
-  color: var(--primary-dark);
-}
-
 .auth-form {
   display: flex;
   flex-direction: column;
