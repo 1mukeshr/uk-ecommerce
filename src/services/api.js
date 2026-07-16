@@ -19,10 +19,18 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     let message = 'Something went wrong'
+    const status = error.response?.status
+    const onGithubPages =
+      typeof window !== 'undefined' &&
+      /\.github\.io$/i.test(window.location.hostname)
 
     if (!error.response) {
+      message = onGithubPages
+        ? 'API is not available on GitHub Pages. Use the demo login or host the backend separately.'
+        : 'Cannot reach server. Start API with: npm run server'
+    } else if (status === 405 && onGithubPages) {
       message =
-        'Cannot reach server. Start API with: npm run server'
+        'Login API cannot run on GitHub Pages (405). Use demo auth or deploy the backend.'
     } else if (error.response.data?.message) {
       message = error.response.data.message
     } else if (error.message) {
