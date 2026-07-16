@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { UserIcon, MailIcon, LockIcon, GoogleIcon } from '../../components/icons'
+import { UserIcon, MailIcon, GoogleIcon } from '../../components/icons'
 import AuthLayout from '../../components/auth/AuthLayout'
+import PasswordField from '../../components/auth/PasswordField'
 import { useAuth } from '../../context/AuthContext'
 import { ROUTES } from '../../config'
 
@@ -126,23 +127,16 @@ const Register = () => {
           </div>
         </div>
 
-        <div className="form-field">
-          <div className="input-wrapper">
-            <LockIcon className="input-icon" size={18} />
-            <input
-              type="password"
-              placeholder="Min. 6 characters"
-              id="reg-password"
-              name="password"
-              autoComplete="new-password"
-              value={form.password}
-              onChange={onChange}
-              minLength={6}
-              required
-            />
-            <label htmlFor="reg-password">Password</label>
-          </div>
-        </div>
+        <PasswordField
+          id="reg-password"
+          name="password"
+          label="Password"
+          placeholder="Min. 6 characters"
+          autoComplete="new-password"
+          value={form.password}
+          onChange={onChange}
+          minLength={6}
+        />
 
         <label className="remember-me terms-check">
           <input

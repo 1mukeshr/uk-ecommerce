@@ -28,6 +28,10 @@ api.interceptors.response.use(
       message = onGithubPages
         ? 'Cannot reach PahadLink API. Set VITE_API_URL to your hosted backend.'
         : 'Cannot reach server. Start API with: npm run server'
+    } else if (status === 502 || status === 503 || status === 504) {
+      message = onGithubPages
+        ? 'API is down or sleeping. Start your hosted backend, then try again.'
+        : 'API not running. Keep MongoDB on and run: npm run server'
     } else if (status === 405 && onGithubPages) {
       message =
         'API is missing. Deploy the PahadLink server and set VITE_API_URL.'

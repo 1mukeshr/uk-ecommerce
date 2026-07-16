@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { LockIcon } from '../../components/icons'
 import AuthLayout from '../../components/auth/AuthLayout'
+import PasswordField from '../../components/auth/PasswordField'
 import { resetPassword } from '../../services/authService'
 
 const ResetPassword = () => {
@@ -62,39 +63,27 @@ const ResetPassword = () => {
           </div>
         )}
 
-        <div className="form-field">
-          <div className="input-wrapper">
-            <LockIcon className="input-icon" size={18} />
-            <input
-              type="password"
-              placeholder="Min. 6 characters"
-              id="new-password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              minLength={6}
-              required
-            />
-            <label htmlFor="new-password">New password</label>
-          </div>
-        </div>
+        <PasswordField
+          id="new-password"
+          name="password"
+          label="New password"
+          placeholder="Min. 6 characters"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          minLength={6}
+        />
 
-        <div className="form-field">
-          <div className="input-wrapper">
-            <LockIcon className="input-icon" size={18} />
-            <input
-              type="password"
-              placeholder="Confirm new password"
-              id="confirm-password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              minLength={6}
-              required
-            />
-            <label htmlFor="confirm-password">Confirm password</label>
-          </div>
-        </div>
+        <PasswordField
+          id="confirm-password"
+          name="confirm"
+          label="Confirm password"
+          placeholder="Confirm new password"
+          autoComplete="new-password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          minLength={6}
+        />
 
         <button className="btn-submit" type="submit" disabled={submitting}>
           {submitting ? 'Updating…' : 'Update password'}

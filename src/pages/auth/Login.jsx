@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { UserIcon, LockIcon, GoogleIcon } from '../../components/icons'
+import { UserIcon, GoogleIcon } from '../../components/icons'
 import AuthLayout from '../../components/auth/AuthLayout'
+import PasswordField from '../../components/auth/PasswordField'
 import { useAuth } from '../../context/AuthContext'
 import { ROUTES } from '../../config'
 
@@ -69,22 +70,15 @@ const Login = () => {
           </div>
         </div>
 
-        <div className="form-field">
-          <div className="input-wrapper">
-            <LockIcon className="input-icon" size={18} />
-            <input
-              type="password"
-              placeholder="Enter your password"
-              id="password"
-              name="password"
-              autoComplete="current-password"
-              value={form.password}
-              onChange={onChange}
-              required
-            />
-            <label htmlFor="password">Password</label>
-          </div>
-        </div>
+        <PasswordField
+          id="password"
+          name="password"
+          label="Password"
+          placeholder="Enter your password"
+          autoComplete="current-password"
+          value={form.password}
+          onChange={onChange}
+        />
 
         <div className="form-footer">
           <label className="remember-me">
