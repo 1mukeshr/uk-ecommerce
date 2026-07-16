@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "concurrently -n web,api -c green,cyan \"npm run dev\" \"npm run server\"",
     "dev": "vite",

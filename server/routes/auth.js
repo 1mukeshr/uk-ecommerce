@@ -39,18 +39,27 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 6 characters' })
     }
 
-    const exists = await User.findOne({
-      $or: [{ email }, { username }],
-    })
+    const emailTaken = await User.findOne({ email })
+    if (emailTaken) {
+      return res.status(409).json({ message: 'Email already registered' })
+    }
 
-    if (exists) {
-      return res.status(409).json({ message: 'Email or username already registered' })
+    // Keep auto-usernames unique when email local-parts collide
+    let uniqueUsername = username.slice(0, 30)
+    let attempt = 0
+    while (await User.findOne({ username: uniqueUsername })) {
+      attempt += 1
+      const suffix = String(Math.floor(100 + Math.random() * 900))
+      uniqueUsername = `${username.slice(0, 26)}${suffix}`
+      if (attempt > 8) {
+        return res.status(409).json({ message: 'Could not create a unique username. Try again.' })
+      }
     }
 
     const user = await User.create({
       name,
       email,
-      username,
+      username: uniqueUsername,
       password,
       role: 'customer',
     })

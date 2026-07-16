@@ -1,16 +1,22 @@
 # One-click: https://render.com/deploy?repo=https://github.com/1mukeshr/uk-ecommerce
-# Or: Render → New → Blueprint → this repo
-# Set MONGODB_URI from Atlas, e.g.
-# mongodb+srv://USER:PASS@cluster.mongodb.net/Pahadi_link?retryWrites=true&w=majority
+# Or: Render → New → Blueprint → connect this repo
+#
+# Required env on Render:
+#   MONGODB_URI = mongodb+srv://USER:PASS@CLUSTER.mongodb.net/Pahadi_link?retryWrites=true&w=majority
+#   ADMIN_PASSWORD = (your admin password)
+#
+# After deploy, copy the service URL and set GitHub Actions secret:
+#   VITE_API_URL = https://YOUR-SERVICE.onrender.com/api
 services:
   - type: web
     name: pahadlink-api
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install
+    buildCommand: npm install --omit=dev
     startCommand: npm run start:api
     healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production

@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express from 'express'
 import cors from 'cors'
+import mongoose from 'mongoose'
 import { connectDB } from './config/db.js'
 import authRoutes from './routes/auth.js'
 import orderRoutes from './routes/orders.js'
@@ -10,37 +11,52 @@ import contactRoutes from './routes/contact.js'
 const app = express()
 const PORT = process.env.PORT || 5000
 
+app.set('trust proxy', 1)
+
 const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean)
 
+function isAllowedOrigin(origin) {
+  if (!origin) return true
+  if (allowedOrigins.length === 0) return true
+  if (allowedOrigins.includes(origin)) return true
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true
+  // GitHub Pages project + user sites
+  if (/^https:\/\/[\w-]+\.github\.io$/i.test(origin)) return true
+  return false
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Allow same-origin tools, local Vite, and configured frontends
-      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
-        return cb(null, true)
-      }
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
-        return cb(null, true)
-      }
-      if (/^https:\/\/[\w-]+\.github\.io$/i.test(origin)) {
-        return cb(null, true)
-      }
+      if (isAllowedOrigin(origin)) return cb(null, true)
       return cb(new Error(`CORS blocked for origin: ${origin}`))
     },
     credentials: true,
   })
 )
-app.use(express.json())
+app.use(express.json({ limit: '1mb' }))
 
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
+function healthPayload() {
+  const dbState = mongoose.connection.readyState
+  return {
+    ok: dbState === 1,
     service: 'pahadlink-api',
     database: 'Pahadi_link',
-  })
+    mongo: dbState === 1 ? 'connected' : 'disconnected',
+    time: new Date().toISOString(),
+  }
+}
+
+app.get('/', (_req, res) => {
+  res.json(healthPayload())
+})
+
+app.get('/api/health', (_req, res) => {
+  const payload = healthPayload()
+  res.status(payload.ok ? 200 : 503).json(payload)
 })
 
 app.use('/api/auth', authRoutes)
@@ -50,7 +66,8 @@ app.use('/api/contact', contactRoutes)
 
 app.use((err, _req, res, _next) => {
   console.error(err)
-  res.status(err.status || 500).json({
+  const isCors = String(err.message || '').startsWith('CORS blocked')
+  res.status(isCors ? 403 : err.status || 500).json({
     message: err.message || 'Internal server error',
   })
 })

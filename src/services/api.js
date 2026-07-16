@@ -1,10 +1,14 @@
 import axios from 'axios'
 import { API_BASE_URL, STORAGE } from '../config'
 
+const onGithubPages =
+  typeof window !== 'undefined' && /\.github\.io$/i.test(window.location.hostname)
+
+// Render free tier can take ~30–50s to wake from sleep
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 15000,
+  timeout: onGithubPages ? 60000 : 20000,
 })
 
 api.interceptors.request.use((config) => {
@@ -20,21 +24,17 @@ api.interceptors.response.use(
   (error) => {
     let message = 'Something went wrong'
     const status = error.response?.status
-    const onGithubPages =
-      typeof window !== 'undefined' &&
-      /\.github\.io$/i.test(window.location.hostname)
-
     if (!error.response) {
       message = onGithubPages
-        ? 'Cannot reach PahadLink API. Set VITE_API_URL to your hosted backend.'
+        ? 'Cannot reach PahadLink API. Deploy Render API and set GitHub secret VITE_API_URL.'
         : 'Cannot reach server. Start API with: npm run server'
     } else if (status === 502 || status === 503 || status === 504) {
       message = onGithubPages
-        ? 'API is down or sleeping. Start your hosted backend, then try again.'
+        ? 'API is waking up or offline. Wait ~30s and try again (Render free tier sleeps).'
         : 'API not running. Keep MongoDB on and run: npm run server'
     } else if (status === 405 && onGithubPages) {
       message =
-        'API is missing. Deploy the PahadLink server and set VITE_API_URL.'
+        'API URL missing in this build. Set repo secret VITE_API_URL and redeploy Pages.'
     } else if (error.response.data?.message) {
       message = error.response.data.message
     } else if (error.message) {
