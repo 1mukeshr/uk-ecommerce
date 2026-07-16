@@ -25,7 +25,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build:pages
+      - name: Build for GitHub Pages
+        env:
+          # Set repo secret VITE_API_URL = https://YOUR-API.onrender.com/api
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: npm run build:pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

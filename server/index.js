@@ -10,7 +10,29 @@ import contactRoutes from './routes/contact.js'
 const app = express()
 const PORT = process.env.PORT || 5000
 
-app.use(cors({ origin: true, credentials: true }))
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Allow same-origin tools, local Vite, and configured frontends
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+        return cb(null, true)
+      }
+      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+        return cb(null, true)
+      }
+      if (/^https:\/\/[\w-]+\.github\.io$/i.test(origin)) {
+        return cb(null, true)
+      }
+      return cb(new Error(`CORS blocked for origin: ${origin}`))
+    },
+    credentials: true,
+  })
+)
 app.use(express.json())
 
 app.get('/api/health', (_req, res) => {

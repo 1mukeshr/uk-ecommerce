@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "server": "node server/index.js",
+    "start:api": "node server/index.js",
     "seed:admin": "node server/scripts/seedAdmin.js",
     "seed:crm": "node server/scripts/seedAdminCrm.js"
   },

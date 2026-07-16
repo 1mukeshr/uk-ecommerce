@@ -26,11 +26,11 @@ api.interceptors.response.use(
 
     if (!error.response) {
       message = onGithubPages
-        ? 'API is not available on GitHub Pages. Use the demo login or host the backend separately.'
+        ? 'Cannot reach PahadLink API. Set VITE_API_URL to your hosted backend.'
         : 'Cannot reach server. Start API with: npm run server'
     } else if (status === 405 && onGithubPages) {
       message =
-        'Login API cannot run on GitHub Pages (405). Use demo auth or deploy the backend.'
+        'API is missing. Deploy the PahadLink server and set VITE_API_URL.'
     } else if (error.response.data?.message) {
       message = error.response.data.message
     } else if (error.message) {
