@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const indexHtml = resolve('dist/index.html')
@@ -14,11 +14,28 @@ if (!existsSync(indexHtml)) {
 copyFileSync(indexHtml, notFoundHtml)
 writeFileSync(noJekyll, '')
 
-// Prefer VITE_API_URL (GitHub Actions secret) when building for Pages
-const apiUrl = (process.env.VITE_API_URL || '').replace(/\/$/, '')
+// Prefer apiUrl from repo public/runtime-config.json (copied into dist by Vite).
+// Only fall back to VITE_API_URL when the file has no apiUrl.
+let fromFile = ''
+try {
+  if (existsSync(runtimeConfig)) {
+    const data = JSON.parse(readFileSync(runtimeConfig, 'utf8'))
+    if (typeof data?.apiUrl === 'string') fromFile = data.apiUrl.trim().replace(/\/$/, '')
+  }
+} catch {
+  // ignore
+}
+
+const fromEnv = (process.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+const apiUrl = fromFile || fromEnv
+
 if (apiUrl) {
   writeFileSync(runtimeConfig, `${JSON.stringify({ apiUrl }, null, 2)}\n`)
-  console.log(`Wrote dist/runtime-config.json apiUrl=${apiUrl}`)
+  console.log(
+    `Wrote dist/runtime-config.json apiUrl=${apiUrl} (source=${fromFile ? 'runtime-config' : 'VITE_API_URL'})`
+  )
+} else {
+  console.warn('No apiUrl in runtime-config.json or VITE_API_URL - Pages auth will fail')
 }
 
 console.log('Created dist/404.html and dist/.nojekyll for GitHub Pages')

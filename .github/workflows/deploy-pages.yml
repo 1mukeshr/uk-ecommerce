@@ -30,33 +30,37 @@ jobs:
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
-          if [ -z "$VITE_API_URL" ]; then
-            echo "::warning::Secret VITE_API_URL is not set. Storefront will deploy, but login/register need a hosted API."
-            echo "Add secret VITE_API_URL = https://YOUR-SERVICE.onrender.com/api then redeploy."
+          # public/runtime-config.json is the source of truth for Pages.
+          # VITE_API_URL is only a fallback when runtime-config apiUrl is empty.
+          FILE_URL=$(node -e "try{const u=require('./public/runtime-config.json').apiUrl||'';console.log(String(u).trim())}catch{console.log('')}")
+          EFFECTIVE="${FILE_URL:-$VITE_API_URL}"
+          if [ -z "$EFFECTIVE" ]; then
+            echo "::warning::No API URL in public/runtime-config.json or secret VITE_API_URL."
             echo "has_api=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          case "$VITE_API_URL" in
+          case "$EFFECTIVE" in
             http://*|https://*) ;;
             *)
-              echo "::error::VITE_API_URL must start with http:// or https://"
+              echo "::error::API URL must start with http:// or https://"
               exit 1
               ;;
           esac
-          echo "Using hosted API: $VITE_API_URL"
+          echo "Using hosted API: $EFFECTIVE (source=$([ -n \"$FILE_URL\" ] && echo runtime-config || echo VITE_API_URL))"
           echo "has_api=true" >> "$GITHUB_OUTPUT"
+          echo "api_url=$EFFECTIVE" >> "$GITHUB_OUTPUT"
       - name: Check API health
         if: steps.api.outputs.has_api == 'true'
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          API_URL: ${{ steps.api.outputs.api_url }}
         continue-on-error: true
         run: |
-          HEALTH_URL="${VITE_API_URL%/}/health"
+          HEALTH_URL="${API_URL%/}/health"
           echo "GET $HEALTH_URL"
           curl -fsS --max-time 60 "$HEALTH_URL" || echo "::warning::API health check failed (service may be sleeping). Pages build continues."
       - name: Build for GitHub Pages
         env:
-          # Optional until Render API is live: VITE_API_URL = https://YOUR-API.onrender.com/api
+          # Fallback only; public/runtime-config.json wins when apiUrl is set
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: npm run build:pages
       - uses: actions/upload-pages-artifact@v3
