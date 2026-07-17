@@ -1,9 +1,9 @@
 /**
  * Resolve API base URL for browser calls.
  * Priority:
- * - VITE_API_URL (always wins)
- * - localhost → /api (Vite proxy to npm run server)
- * - runtime-config.json (GitHub Pages / hosted builds)
+ * - localhost → /api (Vite proxy)
+ * - runtime-config.json (GitHub Pages; can update without rebuild)
+ * - VITE_API_URL (build-time)
  * - /api fallback
  */
 let runtimeApiUrl = ''
@@ -23,11 +23,11 @@ export async function loadRuntimeConfig() {
   try {
     const base = import.meta.env.BASE_URL || '/'
     const url = new URL('runtime-config.json', window.location.origin + base).toString()
-    const res = await fetch(url, { cache: 'no-store' })
+    const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' })
     if (!res.ok) return
     const data = await res.json()
-    if (data?.apiUrl && typeof data.apiUrl === 'string') {
-      runtimeApiUrl = data.apiUrl.replace(/\/$/, '')
+    if (typeof data?.apiUrl === 'string' && data.apiUrl.trim()) {
+      runtimeApiUrl = data.apiUrl.trim().replace(/\/$/, '')
     }
   } catch {
     // optional file
@@ -35,15 +35,15 @@ export async function loadRuntimeConfig() {
 }
 
 function detectApiBase() {
-  const fromEnv = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
-  if (fromEnv) return fromEnv
-
   if (isLocalHost()) return '/api'
 
+  // Prefer runtime-config so Pages can switch API hosts without a rebuild
   if (runtimeApiUrl) return runtimeApiUrl
 
+  const fromEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+  if (fromEnv) return fromEnv
+
   if (typeof window !== 'undefined' && /\.github\.io$/i.test(window.location.hostname)) {
-    // Relative /api on GitHub Pages returns 405 - force a clear failure path
     return ''
   }
 
@@ -52,7 +52,6 @@ function detectApiBase() {
 
 export const getApiBaseUrl = () => detectApiBase()
 
-// Kept for existing imports; value is resolved at call-time via getApiBaseUrl in api.js
 export const API_BASE_URL = (
   import.meta.env.VITE_API_URL || '/api'
 ).replace(/\/$/, '')
