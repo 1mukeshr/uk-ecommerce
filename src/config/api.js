@@ -1,16 +1,39 @@
 /**
- * Resolve API base URL for browser calls.
+ * Resolve API base URL + optional Firebase web config for browser calls.
  * Priority:
- * - localhost → /api (Vite proxy)
+ * - localhost → /api (Vite proxy); Firebase from VITE_* env
  * - runtime-config.json (GitHub Pages; can update without rebuild)
- * - VITE_API_URL (build-time)
- * - /api fallback
+ * - VITE_* (build-time)
  */
 let runtimeApiUrl = ''
+let runtimeFirebase = null
 
 const isLocalHost = () => {
   if (typeof window === 'undefined') return false
   return /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+}
+
+function pickFirebase(data) {
+  if (!data || typeof data !== 'object') return null
+  const src = data.firebase && typeof data.firebase === 'object' ? data.firebase : data
+  const apiKey = String(src.apiKey || src.VITE_FIREBASE_API_KEY || '').trim()
+  const appId = String(src.appId || src.VITE_FIREBASE_APP_ID || '').trim()
+  if (!apiKey || !appId) return null
+  return {
+    apiKey,
+    authDomain: String(src.authDomain || src.VITE_FIREBASE_AUTH_DOMAIN || '').trim(),
+    projectId: String(src.projectId || src.VITE_FIREBASE_PROJECT_ID || '').trim(),
+    storageBucket: String(
+      src.storageBucket || src.VITE_FIREBASE_STORAGE_BUCKET || '',
+    ).trim(),
+    messagingSenderId: String(
+      src.messagingSenderId || src.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+    ).trim(),
+    appId,
+    measurementId: String(
+      src.measurementId || src.VITE_FIREBASE_MEASUREMENT_ID || '',
+    ).trim(),
+  }
 }
 
 export async function loadRuntimeConfig() {
@@ -18,6 +41,7 @@ export async function loadRuntimeConfig() {
   // Local Vite always uses the proxy - skip remote runtime URLs
   if (isLocalHost()) {
     runtimeApiUrl = ''
+    runtimeFirebase = null
     return
   }
   try {
@@ -29,6 +53,7 @@ export async function loadRuntimeConfig() {
     if (typeof data?.apiUrl === 'string' && data.apiUrl.trim()) {
       runtimeApiUrl = data.apiUrl.trim().replace(/\/$/, '')
     }
+    runtimeFirebase = pickFirebase(data)
   } catch {
     // optional file
   }
@@ -51,6 +76,10 @@ function detectApiBase() {
 }
 
 export const getApiBaseUrl = () => detectApiBase()
+
+export function getRuntimeFirebaseConfig() {
+  return runtimeFirebase
+}
 
 export const API_BASE_URL = (
   import.meta.env.VITE_API_URL || '/api'

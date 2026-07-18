@@ -6,6 +6,7 @@ export const APP_NAME = 'PahadLink'
 export {
   API_BASE_URL,
   getApiBaseUrl,
+  getRuntimeFirebaseConfig,
   loadRuntimeConfig,
 } from './api'
 

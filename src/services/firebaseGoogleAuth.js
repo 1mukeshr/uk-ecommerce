@@ -15,7 +15,7 @@ provider.setCustomParameters({ prompt: 'select_account' })
 export async function signInWithGoogleFirebase() {
   if (!isFirebaseConfigured()) {
     throw new Error(
-      'Google login needs Firebase Web config. Add apiKey and appId in .env (Firebase Console → Project settings).'
+      'Google login needs Firebase Web config. Add firebase.apiKey and firebase.appId in public/runtime-config.json (or VITE_FIREBASE_* in .env), then redeploy.'
     )
   }
 

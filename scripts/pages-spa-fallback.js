@@ -14,28 +14,67 @@ if (!existsSync(indexHtml)) {
 copyFileSync(indexHtml, notFoundHtml)
 writeFileSync(noJekyll, '')
 
-// Prefer apiUrl from repo public/runtime-config.json (copied into dist by Vite).
-// Only fall back to VITE_API_URL when the file has no apiUrl.
-let fromFile = ''
+// Merge apiUrl + firebase into dist/runtime-config.json for GitHub Pages.
+let existing = {}
 try {
   if (existsSync(runtimeConfig)) {
-    const data = JSON.parse(readFileSync(runtimeConfig, 'utf8'))
-    if (typeof data?.apiUrl === 'string') fromFile = data.apiUrl.trim().replace(/\/$/, '')
+    existing = JSON.parse(readFileSync(runtimeConfig, 'utf8')) || {}
   }
 } catch {
-  // ignore
+  existing = {}
 }
 
-const fromEnv = (process.env.VITE_API_URL || '').trim().replace(/\/$/, '')
-const apiUrl = fromFile || fromEnv
+const fromFileApi =
+  typeof existing.apiUrl === 'string'
+    ? existing.apiUrl.trim().replace(/\/$/, '')
+    : ''
+const fromEnvApi = (process.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+const apiUrl = fromFileApi || fromEnvApi
+
+const envFirebase = {
+  apiKey: (process.env.VITE_FIREBASE_API_KEY || '').trim(),
+  authDomain: (process.env.VITE_FIREBASE_AUTH_DOMAIN || '').trim(),
+  projectId: (process.env.VITE_FIREBASE_PROJECT_ID || '').trim(),
+  storageBucket: (process.env.VITE_FIREBASE_STORAGE_BUCKET || '').trim(),
+  messagingSenderId: (process.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '').trim(),
+  appId: (process.env.VITE_FIREBASE_APP_ID || '').trim(),
+  measurementId: (process.env.VITE_FIREBASE_MEASUREMENT_ID || '').trim(),
+}
+
+const fileFirebase =
+  existing.firebase && typeof existing.firebase === 'object'
+    ? existing.firebase
+    : null
+
+const firebase =
+  fileFirebase?.apiKey && fileFirebase?.appId
+    ? fileFirebase
+    : envFirebase.apiKey && envFirebase.appId
+      ? envFirebase
+      : fileFirebase || null
+
+const next = { ...existing }
+if (apiUrl) next.apiUrl = apiUrl
+if (firebase?.apiKey && firebase?.appId) next.firebase = firebase
+
+writeFileSync(runtimeConfig, `${JSON.stringify(next, null, 2)}\n`)
 
 if (apiUrl) {
-  writeFileSync(runtimeConfig, `${JSON.stringify({ apiUrl }, null, 2)}\n`)
   console.log(
-    `Wrote dist/runtime-config.json apiUrl=${apiUrl} (source=${fromFile ? 'runtime-config' : 'VITE_API_URL'})`
+    `Wrote dist/runtime-config.json apiUrl=${apiUrl} (source=${fromFileApi ? 'runtime-config' : 'VITE_API_URL'})`,
   )
 } else {
   console.warn('No apiUrl in runtime-config.json or VITE_API_URL - Pages auth will fail')
+}
+
+if (next.firebase?.apiKey && next.firebase?.appId) {
+  console.log(
+    `Wrote dist/runtime-config.json firebase projectId=${next.firebase.projectId || '(none)'}`,
+  )
+} else {
+  console.warn(
+    'No Firebase web config in runtime-config.json or VITE_FIREBASE_* - Google login on Pages will fail',
+  )
 }
 
 console.log('Created dist/404.html and dist/.nojekyll for GitHub Pages')
