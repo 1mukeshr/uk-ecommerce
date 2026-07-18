@@ -1,1 +1,0 @@
-var e=`pahadlink_orders`,t=()=>{try{let t=localStorage.getItem(e),n=t?JSON.parse(t):[];return Array.isArray(n)?n:[]}catch{return[]}},n=n=>{let r=[n,...t().filter(e=>e.id!==n.id)].slice(0,40);return localStorage.setItem(e,JSON.stringify(r)),r},r=e=>{let n=t();if(!e)return n;let r=e.trim().toLowerCase();return n.filter(e=>(e.email||``).toLowerCase()===r)};export{n,r as t};
