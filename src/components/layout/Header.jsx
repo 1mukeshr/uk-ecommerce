@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { ROUTES, AUTH_PATHS, HIDE_CATEGORY_NAV_PATHS } from '../../config'
+import { capitalizeWords } from '../../utils/text'
 import logo from '../../assets/images/logo.png'
 
 const Header = () => {
@@ -28,6 +29,11 @@ const Header = () => {
   const isAuthPage = AUTH_PATHS.includes(pathname)
   const showCategoryNav =
     !isAuthPage && !HIDE_CATEGORY_NAV_PATHS.includes(pathname)
+
+  const accountLabel = capitalizeWords(
+    user?.name?.split(' ')[0] || user?.username || 'Account'
+  )
+  const accountFullName = capitalizeWords(user?.name || user?.username || 'Account')
 
   useEffect(() => {
     const onDocClick = (e) => {
@@ -136,7 +142,7 @@ const Header = () => {
                     <UserIcon size={20} />
                   </span>
                   <span className="header-icon-label">
-                    {user?.name?.split(' ')[0] || user?.username || 'Account'}
+                    {accountLabel}
                     <DropdownIcon
                       size={14}
                       className={`header-account-chevron${menuOpen ? ' is-open' : ''}`}
@@ -151,7 +157,7 @@ const Header = () => {
                         <UserIcon size={18} />
                       </span>
                       <div className="header-account-meta__text">
-                        <strong>{user?.name}</strong>
+                        <strong>{accountFullName}</strong>
                         <span>{user?.email || user?.username}</span>
                       </div>
                     </div>

@@ -13,7 +13,7 @@ const TOPICS = [
   'Other',
 ]
 
-/** Public contact form -> CRM lead */
+/** Public contact form / live chat -> CRM lead */
 router.post('/', async (req, res) => {
   try {
     const name = String(req.body.name || '').trim()
@@ -35,14 +35,14 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Please write a short message (at least 10 characters)' })
     }
 
-    const interest = TOPICS.includes(topic) ? topic : 'Other'
+    const interest = TOPICS.includes(topic) ? topic : topic || 'Other'
     const lead = await CrmLead.create({
       name,
       email,
       phone,
       source: 'website',
       status: 'new',
-      interest,
+      interest: String(interest).slice(0, 120),
       notes: message.slice(0, 1000),
       assignedTo: null,
     })

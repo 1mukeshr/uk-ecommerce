@@ -6,6 +6,15 @@ import PasswordField from '../../components/auth/PasswordField'
 import { useAuth } from '../../context/AuthContext'
 import { ROUTES } from '../../config'
 
+function resolveReturnPath(from) {
+  if (!from) return ROUTES.HOME
+  if (typeof from === 'string') return from
+  if (typeof from === 'object' && from.pathname) {
+    return `${from.pathname}${from.search || ''}${from.hash || ''}`
+  }
+  return ROUTES.HOME
+}
+
 const Login = () => {
   const navigate = useNavigate()
   const location = useLocation()
@@ -14,11 +23,17 @@ const Login = () => {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
 
-  const from = location.state?.from || ROUTES.HOME
+  const from = resolveReturnPath(location.state?.from)
+  const isCheckoutIntent =
+    location.state?.intent === 'checkout' || from.startsWith(ROUTES.CHECKOUT)
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target
     setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
+  }
+
+  const goAfterAuth = () => {
+    navigate(from, { replace: true })
   }
 
   const onSubmit = async (e) => {
@@ -27,7 +42,7 @@ const Login = () => {
     setSubmitting(true)
     try {
       await login({ username: form.username, password: form.password })
-      navigate(from, { replace: true })
+      goAfterAuth()
     } catch (err) {
       setMessage(err.message)
       setError?.(err.message)
@@ -40,17 +55,30 @@ const Login = () => {
     setMessage('')
     setSubmitting(true)
     try {
-      await loginWithGoogle('pending-google-credential')
+      await loginWithGoogle()
+      goAfterAuth()
     } catch (err) {
-      setMessage(err.message)
+      setMessage(err.message || 'Google sign-in failed')
     } finally {
       setSubmitting(false)
     }
   }
 
   return (
-    <AuthLayout title="Welcome back" subtitle="Sign in to continue shopping">
+    <AuthLayout
+      title="Welcome back"
+      subtitle={
+        isCheckoutIntent
+          ? 'Sign in to complete your order'
+          : 'Sign in to continue shopping'
+      }
+    >
       <form className="auth-form" onSubmit={onSubmit} noValidate>
+        {isCheckoutIntent && (
+          <p className="auth-alert auth-alert--info" role="status">
+            Please log in to continue with checkout.
+          </p>
+        )}
         {message && <p className="auth-alert auth-alert--error">{message}</p>}
 
         <div className="form-field">
@@ -113,12 +141,14 @@ const Login = () => {
           Continue with Google
         </button>
 
-        <p className="auth-otp-hint">
-          OTP Login - <em>coming soon</em>
-        </p>
-
         <p className="auth-switch">
-          Don&apos;t have an account? <Link to={ROUTES.REGISTER}>Create one</Link>
+          Don&apos;t have an account?{' '}
+          <Link
+            to={ROUTES.REGISTER}
+            state={{ from, intent: location.state?.intent }}
+          >
+            Create one
+          </Link>
         </p>
       </form>
     </AuthLayout>

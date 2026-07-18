@@ -601,8 +601,8 @@ export const YoutubeIcon = ({ size = 18, className = '' }) => (
   </svg>
 )
 
-/** Cash on delivery - banknote */
-export const CodIcon = ({ size = 22, className = '' }) => (
+/** Cash on delivery - green banknote (original) */
+export const CodIcon = ({ size = 24, className = '' }) => (
   <svg
     viewBox="0 0 24 24"
     width={size}
@@ -611,21 +611,15 @@ export const CodIcon = ({ size = 22, className = '' }) => (
     aria-hidden="true"
     fill="none"
   >
-    <rect x="2" y="6" width="20" height="12" rx="2" fill="#E8F5E9" stroke="#2E7D32" strokeWidth="1.4" />
-    <circle cx="12" cy="12" r="3.2" fill="#fff" stroke="#2E7D32" strokeWidth="1.3" />
-    <path
-      d="M12 9.8v4.4M10.6 11.2c.3-.5.8-.8 1.4-.8.9 0 1.5.5 1.5 1.2s-.6 1.1-1.5 1.1c-.6 0-1.1-.2-1.4-.6"
-      stroke="#2E7D32"
-      strokeWidth="1.25"
-      strokeLinecap="round"
-    />
-    <circle cx="5.5" cy="12" r="1" fill="#81C784" />
-    <circle cx="18.5" cy="12" r="1" fill="#81C784" />
+    <rect x="2.5" y="6.5" width="19" height="11" rx="2" stroke="#2E7D32" strokeWidth="1.5" />
+    <circle cx="12" cy="12" r="2.75" stroke="#2E7D32" strokeWidth="1.45" />
+    <circle cx="5.75" cy="12" r="0.9" fill="#2E7D32" />
+    <circle cx="18.25" cy="12" r="0.9" fill="#2E7D32" />
   </svg>
 )
 
-/** UPI - phone pay mark */
-export const UpiIcon = ({ size = 22, className = '' }) => (
+/** UPI - purple phone with BHIM-style bars (original) */
+export const UpiIcon = ({ size = 24, className = '' }) => (
   <svg
     viewBox="0 0 24 24"
     width={size}
@@ -634,17 +628,17 @@ export const UpiIcon = ({ size = 22, className = '' }) => (
     aria-hidden="true"
     fill="none"
   >
-    <rect x="6.5" y="2.5" width="11" height="19" rx="2.2" fill="#F3E8FF" stroke="#6A1B9A" strokeWidth="1.4" />
-    <rect x="9" y="4.5" width="6" height="1.2" rx="0.6" fill="#CE93D8" />
-    <path d="M9.2 10.2h5.6" stroke="#097939" strokeWidth="1.6" strokeLinecap="round" />
-    <path d="M9.2 13h5.6" stroke="#ED752E" strokeWidth="1.6" strokeLinecap="round" />
-    <path d="M9.2 15.8h3.6" stroke="#097939" strokeWidth="1.6" strokeLinecap="round" />
-    <circle cx="12" cy="19.2" r="0.9" fill="#6A1B9A" />
+    <rect x="7" y="2.5" width="10" height="19" rx="2.2" stroke="#6A1B9A" strokeWidth="1.5" />
+    <rect x="9.5" y="4.4" width="5" height="1.1" rx="0.55" fill="#9C27B0" />
+    <path d="M9.4 9.8h5.2" stroke="#097939" strokeWidth="1.55" strokeLinecap="round" />
+    <path d="M9.4 12.6h5.2" stroke="#ED752E" strokeWidth="1.55" strokeLinecap="round" />
+    <path d="M9.4 15.4h3.4" stroke="#1565C0" strokeWidth="1.55" strokeLinecap="round" />
+    <circle cx="12" cy="18.9" r="0.85" fill="#6A1B9A" />
   </svg>
 )
 
-/** Credit / debit card */
-export const CardPayIcon = ({ size = 22, className = '' }) => (
+/** Credit / debit card - blue (original) */
+export const CardPayIcon = ({ size = 24, className = '' }) => (
   <svg
     viewBox="0 0 24 24"
     width={size}
@@ -653,11 +647,10 @@ export const CardPayIcon = ({ size = 22, className = '' }) => (
     aria-hidden="true"
     fill="none"
   >
-    <rect x="2" y="5" width="20" height="14" rx="2.2" fill="#E3F2FD" stroke="#1565C0" strokeWidth="1.4" />
-    <rect x="2" y="8.2" width="20" height="3.2" fill="#1565C0" />
-    <rect x="4.5" y="14" width="5.5" height="1.6" rx="0.4" fill="#90CAF9" />
-    <rect x="11.5" y="14" width="3.2" height="1.6" rx="0.4" fill="#90CAF9" />
-    <rect x="16" y="14" width="3.5" height="1.6" rx="0.4" fill="#64B5F6" />
+    <rect x="2.5" y="5.5" width="19" height="13" rx="2.2" stroke="#1565C0" strokeWidth="1.5" />
+    <path d="M2.5 9.2h19" stroke="#1565C0" strokeWidth="2.4" />
+    <rect x="5" y="14.2" width="4.2" height="1.5" rx="0.35" fill="#1565C0" />
+    <rect x="10.2" y="14.2" width="2.6" height="1.5" rx="0.35" fill="#42A5F5" />
   </svg>
 )
 

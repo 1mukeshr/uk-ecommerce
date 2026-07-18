@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import Breadcrumb from '../../components/layout/Breadcrumb'
-import FaqSection from '../../components/layout/FaqSection'
 import Footer from '../../components/layout/Footer'
 import ProductCard from '../../components/products/ProductCard'
 import {
@@ -17,6 +16,7 @@ import { ROUTES, categoryPath } from '../../config'
 import {
   getProductById,
   getRelatedProducts,
+  getStockStatus,
   getVariantBySize,
 } from '../../data/siteData'
 import { useShop } from '../../context/ShopContext'
@@ -33,7 +33,8 @@ const ProductDetail = () => {
     [product]
   )
 
-  const { addToCart, toggleWishlist, isInWishlist } = useShop()
+  const { addToCart, toggleWishlist, isInWishlist, getCartQtyForVariant } =
+    useShop()
   const [activeImage, setActiveImage] = useState(0)
   const [size, setSize] = useState('')
   const [qty, setQty] = useState(1)
@@ -139,7 +140,9 @@ const ProductDetail = () => {
 
   useEffect(() => {
     if (!product) return
-    setSize(product.sizes[0])
+    const firstInStock =
+      product.variants?.find((v) => v.stock > 0)?.size || product.sizes?.[0]
+    setSize(firstInStock || '')
     setQty(1)
     setActiveImage(0)
     setJustAdded(false)
@@ -179,12 +182,31 @@ const ProductDetail = () => {
     []
   )
 
+  const selectedSize = size || product?.sizes?.[0]
+  const previewStock =
+    product && selectedSize
+      ? getStockStatus(product, selectedSize)
+      : { stock: 0, inStock: false }
+  const previewInCart =
+    product && selectedSize
+      ? getCartQtyForVariant?.(product.id, selectedSize) || 0
+      : 0
+  const previewMaxQty = Math.max(0, previewStock.stock - previewInCart)
+
+  useEffect(() => {
+    setQty((q) => Math.min(Math.max(1, q), Math.max(1, previewMaxQty || 1)))
+  }, [previewMaxQty, selectedSize])
+
   if (!product) {
     return <Navigate to={ROUTES.SHOP} replace />
   }
 
   const variants = product.variants || []
   const selected = getVariantBySize(product, size)
+  const stockInfo = getStockStatus(product, selected.size)
+  const inCartQty = getCartQtyForVariant?.(product.id, selected.size) || 0
+  const maxQty = Math.max(0, stockInfo.stock - inCartQty)
+  const canAdd = stockInfo.inStock && maxQty > 0
   const off =
     selected.compareAt > selected.price
       ? Math.round(
@@ -194,12 +216,15 @@ const ProductDetail = () => {
   const wished = isInWishlist(product.id)
 
   const handleAdd = (openCart = true) => {
-    addToCart(product, {
+    if (!canAdd) return
+    const addQty = Math.min(qty, maxQty)
+    const ok = addToCart(product, {
       size: selected.size,
-      qty,
+      qty: addQty,
       price: selected.price,
       open: openCart,
     })
+    if (ok === false) return
     setJustAdded(true)
     if (addedTimer.current) clearTimeout(addedTimer.current)
     addedTimer.current = setTimeout(() => setJustAdded(false), 1600)
@@ -249,7 +274,7 @@ const ProductDetail = () => {
               <div
                 className={`product-detail__main-media${
                   zoom.active ? ' is-zooming' : ''
-                }`}
+                }${!stockInfo.inStock ? ' is-oos' : ''}`}
                 onMouseEnter={handleMediaZoomMove}
                 onMouseMove={handleMediaZoomMove}
                 onMouseLeave={handleMediaZoomLeave}
@@ -258,6 +283,11 @@ const ProductDetail = () => {
               >
                 {off > 0 && (
                   <span className="product-detail__badge">-{off}%</span>
+                )}
+                {!stockInfo.inStock && (
+                  <span className="product-detail__stock-badge product-detail__stock-badge--oos">
+                    Out of stock
+                  </span>
                 )}
                 <img
                   src={product.images[activeImage]}
@@ -317,6 +347,17 @@ const ProductDetail = () => {
                     You save {formatPrice(selected.compareAt - selected.price)}
                   </p>
                 )}
+                <p
+                  className={`product-detail__availability${
+                    !stockInfo.inStock
+                      ? ' is-oos'
+                      : stockInfo.lowStock
+                        ? ' is-low'
+                        : ''
+                  }`}
+                >
+                  {stockInfo.label}
+                </p>
               </div>
 
               <div className="product-detail__field">
@@ -334,6 +375,7 @@ const ProductDetail = () => {
                       option.compareAt > option.price
                         ? option.compareAt - option.price
                         : 0
+                    const optionOos = (option.stock ?? 0) <= 0
 
                     return (
                       <button
@@ -342,16 +384,18 @@ const ProductDetail = () => {
                         role="listitem"
                         className={`product-detail__size${
                           size === option.size ? ' is-active' : ''
-                        }`}
+                        }${optionOos ? ' is-oos' : ''}`}
                         onClick={() => setSize(option.size)}
+                        disabled={optionOos}
+                        aria-disabled={optionOos}
                       >
                         <span className="product-detail__size-name">
                           {option.size}
                         </span>
                         <span className="product-detail__size-price">
-                          {formatPrice(option.price)}
+                          {optionOos ? 'Out of stock' : formatPrice(option.price)}
                         </span>
-                        {optionOff > 0 && (
+                        {!optionOos && optionOff > 0 && (
                           <span className="product-detail__size-meta">
                             <span className="product-detail__size-off">
                               {optionOff}% off
@@ -373,6 +417,7 @@ const ProductDetail = () => {
                   <button
                     type="button"
                     aria-label="Decrease quantity"
+                    disabled={!canAdd}
                     onClick={() => setQty((q) => Math.max(1, q - 1))}
                   >
                     −
@@ -381,7 +426,8 @@ const ProductDetail = () => {
                   <button
                     type="button"
                     aria-label="Increase quantity"
-                    onClick={() => setQty((q) => q + 1)}
+                    disabled={!canAdd || qty >= maxQty}
+                    onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
                   >
                     +
                   </button>
@@ -393,12 +439,17 @@ const ProductDetail = () => {
                   type="button"
                   className={`product-detail__bag${justAdded ? ' is-added' : ''}`}
                   onClick={() => handleAdd(true)}
+                  disabled={!canAdd}
                 >
                   {justAdded ? (
                     <>
                       <CheckCircleIcon size={16} />
                       Added
                     </>
+                  ) : !stockInfo.inStock ? (
+                    'Out of stock'
+                  ) : maxQty <= 0 ? (
+                    'Max in bag'
                   ) : (
                     'Add to bag'
                   )}
@@ -407,6 +458,7 @@ const ProductDetail = () => {
                   type="button"
                   className="product-detail__buy"
                   onClick={() => handleAdd(true)}
+                  disabled={!canAdd}
                 >
                   Buy now
                 </button>
@@ -441,51 +493,85 @@ const ProductDetail = () => {
 
         <section className="product-detail-tabs">
           <div className="container">
-            <div className="product-detail-tabs__nav" role="tablist">
-              {[
-                { id: 'description', label: 'Description' },
-                { id: 'details', label: 'Details' },
-                { id: 'highlights', label: 'Highlights' },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === item.id}
-                  className={`product-detail-tabs__tab${
-                    tab === item.id ? ' is-active' : ''
-                  }`}
-                  onClick={() => setTab(item.id)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            <header className="product-detail-tabs__intro">
+              <p className="product-detail-tabs__eyebrow">Product guide</p>
+              <h2>What you’re buying</h2>
+            </header>
 
-            <div className="product-detail-tabs__panel">
-              {tab === 'description' && <p>{product.description}</p>}
+            <div className="product-detail-tabs__layout">
+              <div
+                className="product-detail-tabs__nav"
+                role="tablist"
+                aria-label="Product information"
+              >
+                {[
+                  { id: 'description', label: 'Description', hint: 'Story & use' },
+                  { id: 'details', label: 'Details', hint: 'Specs' },
+                  { id: 'highlights', label: 'Highlights', hint: 'Why it stands out' },
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    id={`product-tab-${item.id}`}
+                    aria-controls={`product-panel-${item.id}`}
+                    aria-selected={tab === item.id}
+                    tabIndex={tab === item.id ? 0 : -1}
+                    className={`product-detail-tabs__tab${
+                      tab === item.id ? ' is-active' : ''
+                    }`}
+                    onClick={() => setTab(item.id)}
+                  >
+                    <span className="product-detail-tabs__tab-label">{item.label}</span>
+                    <span className="product-detail-tabs__tab-hint">{item.hint}</span>
+                  </button>
+                ))}
+              </div>
 
-              {tab === 'details' && (
-                <dl className="product-detail-spec">
-                  {product.details.map((row) => (
-                    <div key={row.label}>
-                      <dt>{row.label}</dt>
-                      <dd>{row.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
+              <div
+                className="product-detail-tabs__panel"
+                role="tabpanel"
+                id={`product-panel-${tab}`}
+                aria-labelledby={`product-tab-${tab}`}
+                key={tab}
+              >
+                {tab === 'description' && (
+                  <div className="product-detail-tabs__block">
+                    <h3 className="product-detail-tabs__title">Description</h3>
+                    <p className="product-detail-tabs__lead">{product.description}</p>
+                  </div>
+                )}
 
-              {tab === 'highlights' && (
-                <ul className="product-detail-highlights">
-                  {product.highlights.map((line) => (
-                    <li key={line}>
-                      <CheckCircleIcon size={15} />
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                {tab === 'details' && (
+                  <div className="product-detail-tabs__block">
+                    <h3 className="product-detail-tabs__title">Details</h3>
+                    <dl className="product-detail-spec">
+                      {product.details.map((row) => (
+                        <div key={row.label} className="product-detail-spec__row">
+                          <dt>{row.label}</dt>
+                          <dd>{row.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                )}
+
+                {tab === 'highlights' && (
+                  <div className="product-detail-tabs__block">
+                    <h3 className="product-detail-tabs__title">Highlights</h3>
+                    <ul className="product-detail-highlights">
+                      {product.highlights.map((line, index) => (
+                        <li key={line}>
+                          <span className="product-detail-highlights__num" aria-hidden="true">
+                            {String(index + 1).padStart(2, '0')}
+                          </span>
+                          <span>{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </section>
@@ -496,7 +582,6 @@ const ProductDetail = () => {
               <div className="section-head section-head--row">
                 <div>
                   <h2>Related products</h2>
-                  <p>More picks from {product.categoryName}.</p>
                 </div>
                 <div className="product-detail-related__head-actions">
                   <div className="product-detail-related__controls">
@@ -559,12 +644,6 @@ const ProductDetail = () => {
             </div>
           </section>
         )}
-
-        <FaqSection
-          page="product"
-          title="Product questions"
-          className="faq-section--soft"
-        />
       </main>
       <Footer />
     </>

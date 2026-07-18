@@ -7,6 +7,7 @@ import {
   searchCategories,
   searchProducts,
 } from '../../data/siteData'
+import { capitalizeWords } from '../../utils/text'
 
 const SEARCH_PHRASES = [
   'honey, rajma, shawls and more',
@@ -17,7 +18,8 @@ const SEARCH_PHRASES = [
   'organic millets & dals',
 ]
 
-const shortName = (name = '') => name.split('|')[0].trim() || name
+const shortName = (name = '') =>
+  capitalizeWords(name.split('|')[0].trim() || name)
 
 /**
  * Header search with live product / category suggestions.

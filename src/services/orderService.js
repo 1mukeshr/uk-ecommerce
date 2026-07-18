@@ -25,6 +25,15 @@ export async function createOrder(payload) {
   return data.order
 }
 
+export async function validateCoupon({ code, subtotal, email }) {
+  const { data } = await api.post('/coupons/validate', {
+    code,
+    subtotal,
+    email,
+  })
+  return data
+}
+
 export async function updateOrder(id, payload) {
   const { data } = await api.patch(`/orders/${id}`, payload)
   return data

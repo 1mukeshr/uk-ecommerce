@@ -15,6 +15,8 @@ export const STORAGE = {
   CART: 'pahadlink_cart',
   WISHLIST: 'pahadlink_wishlist',
   LOCATION: 'pahadlink_location',
+  ADDRESSES: 'pahadlink_addresses',
+  THEME: 'pahadlink_theme',
   CHECKOUT_ADDRESS: 'pahadlink_checkout_address',
 }
 

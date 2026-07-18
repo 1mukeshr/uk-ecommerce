@@ -20,9 +20,41 @@ export const saveOrder = (order) => {
   return next
 }
 
-export const getOrdersForUser = (email) => {
+/**
+ * Return only orders belonging to the signed-in user (email / user id).
+ * Never returns other customers' orders; empty if not identified.
+ */
+export const getOrdersForUser = (userOrEmail) => {
   const list = readOrders()
-  if (!email) return list
-  const key = email.trim().toLowerCase()
-  return list.filter((order) => (order.email || '').toLowerCase() === key)
+  const email =
+    typeof userOrEmail === 'string'
+      ? userOrEmail.trim().toLowerCase()
+      : String(userOrEmail?.email || '')
+          .trim()
+          .toLowerCase()
+  const userId =
+    typeof userOrEmail === 'object' && userOrEmail
+      ? userOrEmail.id || userOrEmail._id || null
+      : null
+
+  if (!email && !userId) return []
+
+  return list
+    .filter((order) => {
+      const orderEmails = [order.userEmail, order.email]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean)
+      const orderUserId = order.userId || null
+
+      if (userId && orderUserId && String(orderUserId) === String(userId)) {
+        return true
+      }
+      if (email && orderEmails.includes(email)) return true
+      return false
+    })
+    .sort((a, b) => {
+      const ta = new Date(a.createdAt || 0).getTime()
+      const tb = new Date(b.createdAt || 0).getTime()
+      return tb - ta
+    })
 }

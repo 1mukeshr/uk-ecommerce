@@ -13,6 +13,7 @@ import {
   registerUser,
   googleLogin as googleLoginApi,
 } from '../services/authService'
+import { signInWithGoogleFirebase, signOutFirebase } from '../services/firebaseGoogleAuth'
 
 const AuthContext = createContext(null)
 
@@ -99,21 +100,20 @@ export function AuthProvider({ children }) {
     [persistSession]
   )
 
-  const loginWithGoogle = useCallback(
-    async (credential) => {
-      setError(null)
-      const data = await googleLoginApi(credential)
-      if (data.token && data.user) {
-        persistSession(data.token, data.user)
-      }
-      return data
-    },
-    [persistSession]
-  )
+  const loginWithGoogle = useCallback(async () => {
+    setError(null)
+    const { idToken } = await signInWithGoogleFirebase()
+    const data = await googleLoginApi(idToken)
+    if (data.token && data.user) {
+      persistSession(data.token, data.user)
+    }
+    return data
+  }, [persistSession])
 
   const logout = useCallback(() => {
     clearSession()
     setError(null)
+    void signOutFirebase()
   }, [clearSession])
 
   const hasRole = useCallback(

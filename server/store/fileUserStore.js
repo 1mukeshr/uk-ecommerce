@@ -78,12 +78,14 @@ export const fileUserStore = {
   async findOne(query = {}) {
     const users = readUsers()
     const found = users.find((u) => {
+      if (query.googleId && u.googleId === String(query.googleId)) return true
       if (query.email && u.email === String(query.email).toLowerCase()) return true
       if (query.username && u.username === String(query.username).toLowerCase()) return true
       if (query.id && u.id === query.id) return true
       if (query._id && u.id === String(query._id)) return true
       if (query.$or) {
         return query.$or.some((clause) => {
+          if (clause.googleId && u.googleId === String(clause.googleId)) return true
           if (clause.email && u.email === String(clause.email).toLowerCase()) return true
           if (clause.username && u.username === String(clause.username).toLowerCase()) return true
           return false

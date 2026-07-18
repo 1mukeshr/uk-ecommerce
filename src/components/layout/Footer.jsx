@@ -107,6 +107,15 @@ const Footer = () => {
           </div>
         </div>
 
+        <p className="footer-disclaimer">
+          Disclaimer: Product images are for representation. Actual colour, packing,
+          and weight may vary slightly. Prices and offers can change without prior
+          notice. Delivery timelines depend on location and courier partners. For
+          food items, check the pack for ingredients, expiry, and storage details
+          before use. PahadLink is not liable for delays or damage caused by
+          third-party logistics beyond our reasonable control.
+        </p>
+
         <div className="footer-bottom">
           <p className="footer-copy">
             <span className="footer-copy__year">© {year}</span>

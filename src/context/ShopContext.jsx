@@ -7,7 +7,13 @@ import {
   useState,
 } from 'react'
 import { STORAGE } from '../config'
-import { getProductMinPrice, getVariantBySize } from '../data/siteData'
+import {
+  getProductById,
+  getProductMinPrice,
+  getVariantBySize,
+  getVariantStock,
+} from '../data/siteData'
+import { capitalizeWords } from '../utils/text'
 
 const ShopContext = createContext(null)
 
@@ -22,9 +28,20 @@ const readStore = (key, fallback) => {
   }
 }
 
+const withCapitalizedNames = (items) =>
+  items.map((item) =>
+    item?.name
+      ? { ...item, name: capitalizeWords(item.name) }
+      : item
+  )
+
 export function ShopProvider({ children }) {
-  const [cart, setCart] = useState(() => readStore(STORAGE.CART, []))
-  const [wishlist, setWishlist] = useState(() => readStore(STORAGE.WISHLIST, []))
+  const [cart, setCart] = useState(() =>
+    withCapitalizedNames(readStore(STORAGE.CART, []))
+  )
+  const [wishlist, setWishlist] = useState(() =>
+    withCapitalizedNames(readStore(STORAGE.WISHLIST, []))
+  )
   const [cartOpen, setCartOpen] = useState(false)
 
   useEffect(() => {
@@ -76,31 +93,55 @@ export function ShopProvider({ children }) {
       const variant = getVariantBySize(product, size)
       const unitSize = variant.size
       const unitPrice = price ?? variant.price
+      const stock = getVariantStock(product, unitSize)
+
+      if (stock <= 0) return false
+
+      let added = false
 
       setCart((prev) => {
         const key = `${product.id}::${unitSize}`
         const existing = prev.find((item) => item.key === key)
+        const already = existing?.qty || 0
+        const room = Math.max(0, stock - already)
+        if (room <= 0) {
+          added = false
+          return prev
+        }
+
+        const addQty = Math.min(Math.max(1, qty), room)
+        added = addQty > 0
+
         if (existing) {
           return prev.map((item) =>
             item.key === key
-              ? { ...item, qty: item.qty + qty, price: unitPrice }
+              ? {
+                  ...item,
+                  qty: already + addQty,
+                  price: unitPrice,
+                  maxStock: stock,
+                }
               : item,
           )
         }
+
         return [
           ...prev,
           {
             key,
             id: product.id,
-            name: product.name,
+            name: capitalizeWords(product.name),
             image: product.image,
             price: unitPrice,
             size: unitSize,
-            qty,
+            qty: addQty,
+            maxStock: stock,
           },
         ]
       })
-      if (open) setCartOpen(true)
+
+      if (added && open) setCartOpen(true)
+      return added
     },
     [],
   )
@@ -108,9 +149,32 @@ export function ShopProvider({ children }) {
   const updateCartQty = useCallback((key, qty) => {
     setCart((prev) => {
       if (qty <= 0) return prev.filter((item) => item.key !== key)
-      return prev.map((item) => (item.key === key ? { ...item, qty } : item))
+
+      return prev
+        .map((item) => {
+          if (item.key !== key) return item
+
+          const product = getProductById(item.id)
+          const stock = product
+            ? getVariantStock(product, item.size)
+            : Math.max(0, Number(item.maxStock) || 0)
+          const nextQty = Math.min(qty, stock)
+
+          if (nextQty <= 0) return null
+
+          return { ...item, qty: nextQty, maxStock: stock }
+        })
+        .filter(Boolean)
     })
   }, [])
+
+  const getCartQtyForVariant = useCallback(
+    (productId, size) => {
+      const key = `${productId}::${size}`
+      return cart.find((item) => item.key === key)?.qty || 0
+    },
+    [cart],
+  )
 
   const removeFromCart = useCallback((key) => {
     setCart((prev) => prev.filter((item) => item.key !== key))
@@ -128,7 +192,7 @@ export function ShopProvider({ children }) {
         ...prev,
         {
           id: product.id,
-          name: product.name,
+          name: capitalizeWords(product.name),
           image: product.image,
           price: getProductMinPrice(product),
         },
@@ -154,6 +218,7 @@ export function ShopProvider({ children }) {
       toggleCart,
       addToCart,
       updateCartQty,
+      getCartQtyForVariant,
       removeFromCart,
       clearCart,
       toggleWishlist,
@@ -171,6 +236,7 @@ export function ShopProvider({ children }) {
       toggleCart,
       addToCart,
       updateCartQty,
+      getCartQtyForVariant,
       removeFromCart,
       clearCart,
       toggleWishlist,

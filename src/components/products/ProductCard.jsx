@@ -5,7 +5,9 @@ import { useShop } from '../../context/ShopContext'
 import { productPath } from '../../config'
 import {
   getProductVariants,
+  getStockStatus,
   getVariantBySize,
+  isProductInStock,
 } from '../../data/siteData'
 
 const formatPrice = (n) => `₹${n.toLocaleString('en-IN')}`
@@ -18,18 +20,32 @@ const discountPct = (price, compareAt) =>
  */
 const ProductCard = ({ product, preferredSize }) => {
   const variants = useMemo(() => getProductVariants(product), [product])
+  const inStockVariants = useMemo(
+    () => variants.filter((v) => v.stock > 0),
+    [variants]
+  )
+  const productAvailable = isProductInStock(product)
+
   const defaultSize =
-    (preferredSize && variants.some((v) => v.size === preferredSize)
+    (preferredSize && inStockVariants.some((v) => v.size === preferredSize)
       ? preferredSize
-      : variants[0]?.size) || product.sizes?.[0]
+      : null) ||
+    inStockVariants[0]?.size ||
+    variants[0]?.size ||
+    product.sizes?.[0]
 
   const [size, setSize] = useState(defaultSize)
   const [qty, setQty] = useState(1)
   const [justAdded, setJustAdded] = useState(false)
   const addedTimer = useRef(null)
-  const { addToCart, toggleWishlist, isInWishlist } = useShop()
+  const { addToCart, toggleWishlist, isInWishlist, getCartQtyForVariant } =
+    useShop()
 
   const selected = getVariantBySize(product, size)
+  const stockInfo = getStockStatus(product, selected.size)
+  const inCartQty = getCartQtyForVariant?.(product.id, selected.size) || 0
+  const maxQty = Math.max(0, stockInfo.stock - inCartQty)
+  const canAdd = stockInfo.inStock && maxQty > 0
   const off = discountPct(selected.price, selected.compareAt)
   const wished = isInWishlist(product.id)
   const href = productPath(product.id)
@@ -40,6 +56,10 @@ const ProductCard = ({ product, preferredSize }) => {
     setJustAdded(false)
   }, [product.id, defaultSize])
 
+  useEffect(() => {
+    setQty((q) => Math.min(Math.max(1, q), Math.max(1, maxQty || 1)))
+  }, [maxQty, size])
+
   useEffect(
     () => () => {
       if (addedTimer.current) clearTimeout(addedTimer.current)
@@ -48,18 +68,25 @@ const ProductCard = ({ product, preferredSize }) => {
   )
 
   const handleAddToCart = () => {
-    addToCart(product, {
+    if (!canAdd) return
+    const addQty = Math.min(qty, maxQty)
+    const ok = addToCart(product, {
       size: selected.size,
-      qty,
+      qty: addQty,
       price: selected.price,
     })
+    if (ok === false) return
     setJustAdded(true)
     if (addedTimer.current) clearTimeout(addedTimer.current)
     addedTimer.current = setTimeout(() => setJustAdded(false), 1600)
   }
 
   return (
-    <article className="product-card">
+    <article
+      className={`product-card${!productAvailable ? ' is-oos' : ''}${
+        stockInfo.lowStock ? ' is-low-stock' : ''
+      }`}
+    >
       <div className="product-card__media">
         <Link to={href} className="product-card__media-link">
           <img
@@ -70,6 +97,15 @@ const ProductCard = ({ product, preferredSize }) => {
           />
           <span className="product-card__quick">View product</span>
         </Link>
+        {!productAvailable ? (
+          <span className="product-card__stock product-card__stock--oos">
+            Out of stock
+          </span>
+        ) : stockInfo.lowStock ? (
+          <span className="product-card__stock product-card__stock--low">
+            {stockInfo.label}
+          </span>
+        ) : null}
         <button
           type="button"
           className={`product-card__wish${wished ? ' is-active' : ''}`}
@@ -121,10 +157,12 @@ const ProductCard = ({ product, preferredSize }) => {
               value={size}
               onChange={(e) => setSize(e.target.value)}
               aria-label="Select option"
+              disabled={!productAvailable}
             >
               {variants.map((v) => (
-                <option key={v.size} value={v.size}>
+                <option key={v.size} value={v.size} disabled={v.stock <= 0}>
                   {v.size}
+                  {v.stock <= 0 ? ' — Out of stock' : ''}
                 </option>
               ))}
             </select>
@@ -134,6 +172,7 @@ const ProductCard = ({ product, preferredSize }) => {
             <button
               type="button"
               aria-label="Decrease quantity"
+              disabled={!canAdd}
               onClick={() => setQty((q) => Math.max(1, q - 1))}
             >
               −
@@ -142,7 +181,8 @@ const ProductCard = ({ product, preferredSize }) => {
             <button
               type="button"
               aria-label="Increase quantity"
-              onClick={() => setQty((q) => q + 1)}
+              disabled={!canAdd || qty >= maxQty}
+              onClick={() => setQty((q) => Math.min(maxQty, q + 1))}
             >
               +
             </button>
@@ -152,8 +192,11 @@ const ProductCard = ({ product, preferredSize }) => {
         <div className="product-card__actions">
           <button
             type="button"
-            className={`product-card__bag${justAdded ? ' is-added' : ''}`}
+            className={`product-card__bag${justAdded ? ' is-added' : ''}${
+              !canAdd ? ' is-disabled' : ''
+            }`}
             onClick={handleAddToCart}
+            disabled={!canAdd}
             aria-live="polite"
           >
             {justAdded ? (
@@ -161,6 +204,10 @@ const ProductCard = ({ product, preferredSize }) => {
                 <CheckCircleIcon size={15} />
                 Added
               </>
+            ) : !stockInfo.inStock ? (
+              'Out of stock'
+            ) : maxQty <= 0 ? (
+              'Max in bag'
             ) : (
               'Add to bag'
             )}

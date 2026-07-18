@@ -31,18 +31,8 @@ export async function resetPassword(token, password) {
   return data
 }
 
-export async function googleLogin(credential) {
-  const { data } = await api.post('/auth/google', { credential })
-  return data
-}
-
-export async function sendOtp(phone) {
-  const { data } = await api.post('/auth/otp/send', { phone })
-  return data
-}
-
-export async function verifyOtp(phone, otp) {
-  const { data } = await api.post('/auth/otp/verify', { phone, otp })
+export async function googleLogin(idToken) {
+  const { data } = await api.post('/auth/google', { idToken })
   return data
 }
 

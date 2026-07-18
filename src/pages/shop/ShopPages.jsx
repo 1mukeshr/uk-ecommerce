@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import Breadcrumb from '../../components/layout/Breadcrumb'
-import FaqSection from '../../components/layout/FaqSection'
 import Footer from '../../components/layout/Footer'
 import { useShop } from '../../context/ShopContext'
 import { HeartIcon } from '../../components/icons'
@@ -64,8 +63,6 @@ const WishlistPage = () => {
             )}
           </div>
         </section>
-
-        <FaqSection page="wishlist" title="Wishlist help" />
       </main>
       <Footer />
     </>

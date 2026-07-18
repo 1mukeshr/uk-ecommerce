@@ -5,6 +5,7 @@ import { ROLES } from '../models/User.js'
 import { users } from '../services/users.js'
 import { protect, authorize, signToken } from '../middleware/auth.js'
 import { isFileDbMode } from '../config/db.js'
+import { verifyFirebaseIdToken } from '../services/verifyFirebaseIdToken.js'
 
 const router = Router()
 
@@ -177,35 +178,74 @@ router.post('/reset-password', async (req, res) => {
   }
 })
 
-/** POST /api/auth/google - stub until Google OAuth credentials are set */
+/** POST /api/auth/google — Firebase Google ID token → app JWT session */
 router.post('/google', async (req, res) => {
-  const { credential, idToken } = req.body
-  if (!process.env.GOOGLE_CLIENT_ID) {
-    return res.status(501).json({
-      message: 'Google Login is not configured yet. Set GOOGLE_CLIENT_ID in .env',
-      status: 'coming_soon',
+  try {
+    const idToken = String(req.body.idToken || req.body.credential || '').trim()
+    if (!idToken) {
+      return res.status(400).json({ message: 'Google sign-in token is required' })
+    }
+
+    const decoded = await verifyFirebaseIdToken(idToken)
+    const googleId = String(decoded.sub || '')
+    const email = String(decoded.email || '')
+      .trim()
+      .toLowerCase()
+    const name = String(decoded.name || email.split('@')[0] || 'Google user').trim()
+
+    if (!googleId || !email) {
+      return res.status(400).json({ message: 'Google account is missing email' })
+    }
+
+    let user = await users.findOne({ googleId })
+    if (!user) {
+      user = await users.findOne({ email })
+      if (user) {
+        user.googleId = googleId
+        if (!user.name && name) user.name = name
+        await user.save()
+      }
+    }
+
+    if (!user) {
+      let base =
+        email
+          .split('@')[0]
+          .replace(/[^a-z0-9._-]/g, '')
+          .slice(0, 24) || 'user'
+      if (base.length < 3) base = `user${base}`
+
+      let uniqueUsername = base.slice(0, 30)
+      let attempt = 0
+      while (await users.findOne({ username: uniqueUsername })) {
+        attempt += 1
+        const suffix = String(Math.floor(100 + Math.random() * 900))
+        uniqueUsername = `${base.slice(0, 26)}${suffix}`
+        if (attempt > 8) {
+          return res.status(409).json({ message: 'Could not create account. Try again.' })
+        }
+      }
+
+      user = await users.create({
+        name,
+        email,
+        username: uniqueUsername,
+        googleId,
+        role: 'customer',
+      })
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({ message: 'Account is deactivated' })
+    }
+
+    return res.json(authResponse(user))
+  } catch (error) {
+    const status = error.status || 500
+    return res.status(status).json({
+      message: error.message || 'Google login failed',
     })
   }
-
-  return res.status(501).json({
-    message: 'Google token verification pending. Credential received.',
-    status: 'coming_soon',
-    received: Boolean(credential || idToken),
-  })
-})
-
-router.post('/otp/send', (_req, res) => {
-  return res.status(501).json({
-    message: 'OTP Login is planned for a future release',
-    status: 'coming_soon',
-  })
-})
-
-router.post('/otp/verify', (_req, res) => {
-  return res.status(501).json({
-    message: 'OTP Login is planned for a future release',
-    status: 'coming_soon',
-  })
 })
 
 router.get('/me', protect, (req, res) => {

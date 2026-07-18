@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './assets/css/style.css'
 import './assets/css/responsive.css'
 import { loadRuntimeConfig } from './config'
+import { bootstrapTheme } from './utils/themeColors'
 import App from './App.jsx'
 
 class RootErrorBoundary extends Component {
@@ -71,6 +72,7 @@ if (rootEl) {
   loadRuntimeConfig()
     .catch(() => {})
     .finally(() => {
+      bootstrapTheme()
       createRoot(rootEl).render(
         <StrictMode>
           <RootErrorBoundary>

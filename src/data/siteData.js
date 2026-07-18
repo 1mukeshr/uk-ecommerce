@@ -2,6 +2,9 @@ import defaultProductImage from '../assets/images/default-product.png'
 import bannerHoney from '../assets/images/banners/banner-honey.png'
 import bannerRajma from '../assets/images/banners/banner-rajma.png'
 import bannerTea from '../assets/images/banners/banner-tea.png'
+import offerMixProducts from '../assets/images/banners/offer-mix-products.png'
+import offerFreeShip from '../assets/images/banners/offer-free-ship.png'
+import offerTeaHoney from '../assets/images/banners/offer-tea-honey.png'
 import categoryBannerOrganic from '../assets/images/banners/category-organic-food.png'
 import categoryBannerHoney from '../assets/images/banners/category-honey-natural.png'
 import categoryBannerSpiritual from '../assets/images/banners/category-spiritual.png'
@@ -25,6 +28,7 @@ import packGangajal from '../assets/images/products/pack-gangajal.png'
 import packRudrakshaMala from '../assets/images/products/pack-rudraksha-mala.png'
 import packFestivalHamper from '../assets/images/products/pack-festival-hamper.png'
 import packOrganicGiftBox from '../assets/images/products/pack-organic-gift-box.png'
+import { capitalizeWords } from '../utils/text'
 
 export const DEFAULT_PRODUCT_IMAGE = defaultProductImage
 
@@ -50,6 +54,39 @@ export const productBanners = [
     title: 'Herbal mountain tea',
     text: 'Soothing blends picked from the high hills.',
     image: bannerTea,
+  },
+]
+
+/** Home page offer banners — first item is featured */
+export const homeOffers = [
+  {
+    id: 'first-order',
+    eyebrow: 'First order only',
+    title: 'Save 15% on hill-fresh staples',
+    text: 'Welcome offer for new customers. Free shipping above ₹499.',
+    code: 'PAHAD15',
+    cta: 'Shop the offer',
+    href: '/shop?tag=bestseller',
+    image: offerMixProducts,
+    featured: true,
+  },
+  {
+    id: 'free-ship',
+    eyebrow: 'Delivery',
+    title: 'Free shipping above ₹499',
+    text: 'Pan-India delivery on everyday hill staples.',
+    cta: 'Browse shop',
+    href: '/shop',
+    image: offerFreeShip,
+  },
+  {
+    id: 'tea-honey',
+    eyebrow: 'Kitchen picks',
+    title: 'Tea & raw honey favourites',
+    text: 'Comfort blends and pure forest honey.',
+    cta: 'Explore now',
+    href: '/shop?tag=trending',
+    image: offerTeaHoney,
   },
 ]
 
@@ -195,7 +232,7 @@ export const testimonials = [
 ]
 
 /** Home product catalogues */
-export const products = [
+const productCatalog = [
   {
     id: 'pahadi-rajma',
     name: 'Pahadi Rajma | Kidney Beans from the Hills',
@@ -390,8 +427,82 @@ export const products = [
   },
 ]
 
+/** All product names title-cased for consistent storefront display */
+const STOCK_OVERRIDES = {
+  'pahadi-topi': { stock: 0 },
+  'red-rice': { stockBySize: { '1 kg': 18, '2 kg': 8, '5 kg': 0 } },
+  'bal-mithai': { stockBySize: { '250g': 14, '500g': 0 } },
+  'rudraksha-mala': { stock: 3 },
+  'festival-hamper': { stockBySize: { Standard: 9, Premium: 0 } },
+  'ringaal-basket': { stockBySize: { Medium: 7, Large: 0 } },
+  'organic-gift-box': { stockBySize: { 'Box of 4': 12, 'Box of 6': 2 } },
+}
+
+export const products = productCatalog.map((product) => {
+  const override = STOCK_OVERRIDES[product.id] || {}
+  return {
+    ...product,
+    ...override,
+    stock:
+      typeof override.stock === 'number'
+        ? override.stock
+        : typeof product.stock === 'number'
+          ? product.stock
+          : 24,
+    name: capitalizeWords(product.name),
+  }
+})
+
 export const getProductsByTag = (tag) =>
   products.filter((p) => p.tags.includes(tag))
+
+/** Units available for a product size (0 = out of stock) */
+export const getVariantStock = (product, size) => {
+  if (!product) return 0
+  if (product.inStock === false) return 0
+
+  const label = size || product.sizes?.[0]
+  if (
+    product.stockBySize &&
+    label != null &&
+    Object.prototype.hasOwnProperty.call(product.stockBySize, label)
+  ) {
+    return Math.max(0, Number(product.stockBySize[label]) || 0)
+  }
+
+  if (typeof product.stock === 'number') {
+    return Math.max(0, product.stock)
+  }
+
+  return 24
+}
+
+export const isVariantInStock = (product, size) =>
+  getVariantStock(product, size) > 0
+
+export const isProductInStock = (product) => {
+  if (!product) return false
+  if (product.inStock === false) return false
+  const variants = getProductVariants(product)
+  if (!variants.length) return getVariantStock(product) > 0
+  return variants.some((v) => v.stock > 0)
+}
+
+export const getStockStatus = (product, size) => {
+  const stock = getVariantStock(product, size)
+  if (stock <= 0) {
+    return { stock: 0, inStock: false, lowStock: false, label: 'Out of stock' }
+  }
+  if (stock <= 5) {
+    return {
+      stock,
+      inStock: true,
+      lowStock: true,
+      label: `Only ${stock} left`,
+    }
+  }
+  return { stock, inStock: true, lowStock: false, label: 'In stock' }
+}
 
 /** Convert size label into a comparable weight/quantity unit */
 const toBaseUnits = (amount, unit) => {
@@ -448,6 +559,10 @@ export const getProductVariants = (product) => {
       size: v.size,
       price: v.price,
       compareAt: v.compareAt ?? v.price,
+      stock:
+        typeof v.stock === 'number'
+          ? Math.max(0, v.stock)
+          : getVariantStock(product, v.size),
     }))
   }
 
@@ -466,6 +581,7 @@ export const getProductVariants = (product) => {
         index === 0
           ? product.compareAt
           : nicePrice(product.compareAt * ratio * bulk),
+      stock: getVariantStock(product, size),
     }
   })
 }
@@ -477,6 +593,7 @@ export const getVariantBySize = (product, size) => {
       size: size || 'Default',
       price: product?.price || 0,
       compareAt: product?.compareAt || 0,
+      stock: getVariantStock(product, size),
     }
   }
   return variants.find((v) => v.size === size) || variants[0]

@@ -1,13 +1,23 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { UserIcon, MailIcon, GoogleIcon } from '../../components/icons'
 import AuthLayout from '../../components/auth/AuthLayout'
 import PasswordField from '../../components/auth/PasswordField'
 import { useAuth } from '../../context/AuthContext'
 import { ROUTES } from '../../config'
 
+function resolveReturnPath(from) {
+  if (!from) return ROUTES.HOME
+  if (typeof from === 'string') return from
+  if (typeof from === 'object' && from.pathname) {
+    return `${from.pathname}${from.search || ''}${from.hash || ''}`
+  }
+  return ROUTES.HOME
+}
+
 const Register = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const { register, loginWithGoogle, setError } = useAuth()
   const [form, setForm] = useState({
     name: '',
@@ -18,9 +28,17 @@ const Register = () => {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
 
+  const from = resolveReturnPath(location.state?.from)
+  const isCheckoutIntent =
+    location.state?.intent === 'checkout' || from.startsWith(ROUTES.CHECKOUT)
+
   const onChange = (e) => {
     const { name, value, type, checked } = e.target
     setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
+  }
+
+  const goAfterAuth = () => {
+    navigate(from, { replace: true })
   }
 
   const onSubmit = async (e) => {
@@ -49,7 +67,7 @@ const Register = () => {
         username,
         password: form.password,
       })
-      navigate(ROUTES.HOME, { replace: true })
+      goAfterAuth()
     } catch (err) {
       setMessage(err.message)
       setError?.(err.message)
@@ -62,9 +80,10 @@ const Register = () => {
     setMessage('')
     setSubmitting(true)
     try {
-      await loginWithGoogle('pending-google-credential')
+      await loginWithGoogle()
+      goAfterAuth()
     } catch (err) {
-      setMessage(err.message)
+      setMessage(err.message || 'Google sign-in failed')
     } finally {
       setSubmitting(false)
     }
@@ -73,9 +92,18 @@ const Register = () => {
   return (
     <AuthLayout
       title="Create your account"
-      subtitle="Join PahadLink for authentic Himalayan goods"
+      subtitle={
+        isCheckoutIntent
+          ? 'Create an account to complete your order'
+          : 'Join PahadLink for authentic Himalayan goods'
+      }
     >
       <form className="auth-form" onSubmit={onSubmit} noValidate>
+        {isCheckoutIntent && (
+          <p className="auth-alert auth-alert--info" role="status">
+            Please log in to continue with checkout.
+          </p>
+        )}
         {message && <p className="auth-alert auth-alert--error">{message}</p>}
 
         <div className="form-field">
@@ -155,7 +183,13 @@ const Register = () => {
         </button>
 
         <p className="auth-switch">
-          Already have an account? <Link to={ROUTES.LOGIN}>Sign in</Link>
+          Already have an account?{' '}
+          <Link
+            to={ROUTES.LOGIN}
+            state={{ from, intent: location.state?.intent }}
+          >
+            Sign in
+          </Link>
         </p>
       </form>
     </AuthLayout>

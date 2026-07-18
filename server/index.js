@@ -6,6 +6,7 @@ import { connectDB } from './config/db.js'
 import { fileUserStore } from './store/fileUserStore.js'
 import authRoutes from './routes/auth.js'
 import orderRoutes from './routes/orders.js'
+import couponRoutes from './routes/coupons.js'
 import crmRoutes from './routes/crm.js'
 import contactRoutes from './routes/contact.js'
 
@@ -63,6 +64,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes)
 app.use('/api/orders', orderRoutes)
+app.use('/api/coupons', couponRoutes)
 app.use('/api/crm', crmRoutes)
 app.use('/api/contact', contactRoutes)
 

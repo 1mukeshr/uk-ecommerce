@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Breadcrumb from '../../components/layout/Breadcrumb'
-import FaqSection from '../../components/layout/FaqSection'
 import Footer from '../../components/layout/Footer'
 import ProductCard from '../../components/products/ProductCard'
-import { CloseIcon, SearchIcon, ArrowLeftIcon } from '../../components/icons'
+import { CloseIcon, SearchIcon, ArrowLeftIcon, ChevronDownIcon } from '../../components/icons'
 import { ROUTES } from '../../config'
 import {
   categoryGroups,
@@ -79,6 +78,13 @@ const FilterCheck = ({
   </label>
 )
 
+const FILTER_SECTIONS = [
+  { id: 'category', label: 'Category' },
+  { id: 'collection', label: 'Collection' },
+  { id: 'size', label: 'Size' },
+  { id: 'price', label: 'Price' },
+]
+
 const ShopFilters = ({
   filters,
   bounds,
@@ -95,11 +101,17 @@ const ShopFilters = ({
   setDraftMin,
   setDraftMax,
 }) => {
+  const [openSections, setOpenSections] = useState({ category: true })
+
   const activePreset = PRICE_PRESETS.find(
     (p) =>
       String(filters.min || '') === String(p.min) &&
       String(filters.max || '') === String(p.max)
   )
+
+  const toggleSection = (id) => {
+    setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }))
+  }
 
   return (
     <div className="shop-filters">
@@ -112,115 +124,149 @@ const ShopFilters = ({
         </button>
       </div>
 
-      <section className="shop-filter-block">
-        <h3>Category</h3>
-        <ul className="shop-filter-checks">
-          {categoryGroups.map((group) => {
-            const checked = filters.categories.includes(group.id)
-            return (
-              <li key={group.id}>
-                <FilterCheck
-                  checked={checked}
-                  label={group.name}
-                  count={counts.category[group.id] || 0}
-                  onChange={() => onToggleCategory(group.id)}
-                />
-              </li>
-            )
-          })}
-        </ul>
-      </section>
+      {FILTER_SECTIONS.map((section) => {
+        const isOpen = Boolean(openSections[section.id])
 
-      <section className="shop-filter-block">
-        <h3>Collection</h3>
-        <ul className="shop-filter-checks">
-          {productTabs.map((tab) => {
-            const checked = filters.tags.includes(tab.id)
-            return (
-              <li key={tab.id}>
-                <FilterCheck
-                  checked={checked}
-                  label={tab.label}
-                  count={counts.tag[tab.id] || 0}
-                  onChange={() => onToggleTag(tab.id)}
-                />
-              </li>
-            )
-          })}
-        </ul>
-      </section>
+        return (
+          <section
+            key={section.id}
+            className={`shop-filter-block${isOpen ? ' is-open' : ''}`}
+          >
+            <button
+              type="button"
+              className="shop-filter-block__toggle"
+              aria-expanded={isOpen}
+              aria-controls={`shop-filter-panel-${section.id}`}
+              id={`shop-filter-heading-${section.id}`}
+              onClick={() => toggleSection(section.id)}
+            >
+              <span>{section.label}</span>
+              <ChevronDownIcon size={14} />
+            </button>
 
-      <section className="shop-filter-block">
-        <h3>Size</h3>
-        <ul className="shop-filter-checks shop-filter-checks--scroll">
-          {allSizes.map((size) => (
-            <li key={size}>
-              <FilterCheck
-                checked={filters.sizes.includes(size)}
-                label={size}
-                count={counts.size[size] || 0}
-                onChange={() => onToggleSize(size)}
-              />
-            </li>
-          ))}
-        </ul>
-      </section>
+            <div
+              id={`shop-filter-panel-${section.id}`}
+              role="region"
+              aria-labelledby={`shop-filter-heading-${section.id}`}
+              className="shop-filter-block__panel"
+            >
+              <div className="shop-filter-block__panel-inner">
+              {section.id === 'category' && (
+                <ul className="shop-filter-checks">
+                  {categoryGroups.map((group) => {
+                    const checked = filters.categories.includes(group.id)
+                    return (
+                      <li key={group.id}>
+                        <FilterCheck
+                          checked={checked}
+                          label={group.name}
+                          count={counts.category[group.id] || 0}
+                          onChange={() => onToggleCategory(group.id)}
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
 
-      <section className="shop-filter-block">
-        <h3>Price</h3>
-        <ul className="shop-filter-checks">
-          {PRICE_PRESETS.map((preset) => {
-            const checked = activePreset?.id === preset.id
-            return (
-              <li key={preset.id}>
-                <FilterCheck
-                  checked={checked}
-                  label={preset.label}
-                  onChange={() =>
-                    onSelectPricePreset(checked ? null : preset)
-                  }
-                />
-              </li>
-            )
-          })}
-        </ul>
+              {section.id === 'collection' && (
+                <ul className="shop-filter-checks">
+                  {productTabs.map((tab) => {
+                    const checked = filters.tags.includes(tab.id)
+                    return (
+                      <li key={tab.id}>
+                        <FilterCheck
+                          checked={checked}
+                          label={tab.label}
+                          count={counts.tag[tab.id] || 0}
+                          onChange={() => onToggleTag(tab.id)}
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
 
-        <div className="shop-price-custom">
-          <p className="shop-filter-hint">
-            Custom range · ₹{bounds.min} to ₹{bounds.max}
-          </p>
-          <div className="shop-price-row">
-            <label>
-              <span>Min</span>
-              <input
-                type="number"
-                min={bounds.min}
-                max={bounds.max}
-                value={draftMin}
-                onChange={(e) => setDraftMin(e.target.value)}
-                placeholder={String(bounds.min)}
-              />
-            </label>
-            <span className="shop-price-dash" aria-hidden="true">
-              -
-            </span>
-            <label>
-              <span>Max</span>
-              <input
-                type="number"
-                min={bounds.min}
-                max={bounds.max}
-                value={draftMax}
-                onChange={(e) => setDraftMax(e.target.value)}
-                placeholder={String(bounds.max)}
-              />
-            </label>
-          </div>
-          <button type="button" className="shop-price-apply" onClick={onApplyPrice}>
-            Apply
-          </button>
-        </div>
-      </section>
+              {section.id === 'size' && (
+                <ul className="shop-filter-checks shop-filter-checks--scroll">
+                  {allSizes.map((size) => (
+                    <li key={size}>
+                      <FilterCheck
+                        checked={filters.sizes.includes(size)}
+                        label={size}
+                        count={counts.size[size] || 0}
+                        onChange={() => onToggleSize(size)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {section.id === 'price' && (
+                <>
+                  <ul className="shop-filter-checks">
+                    {PRICE_PRESETS.map((preset) => {
+                      const checked = activePreset?.id === preset.id
+                      return (
+                        <li key={preset.id}>
+                          <FilterCheck
+                            checked={checked}
+                            label={preset.label}
+                            onChange={() =>
+                              onSelectPricePreset(checked ? null : preset)
+                            }
+                          />
+                        </li>
+                      )
+                    })}
+                  </ul>
+
+                  <div className="shop-price-custom">
+                    <p className="shop-filter-hint">
+                      Custom range · ₹{bounds.min} to ₹{bounds.max}
+                    </p>
+                    <div className="shop-price-row">
+                      <label>
+                        <span>Min</span>
+                        <input
+                          type="number"
+                          min={bounds.min}
+                          max={bounds.max}
+                          value={draftMin}
+                          onChange={(e) => setDraftMin(e.target.value)}
+                          placeholder={String(bounds.min)}
+                        />
+                      </label>
+                      <span className="shop-price-dash" aria-hidden="true">
+                        -
+                      </span>
+                      <label>
+                        <span>Max</span>
+                        <input
+                          type="number"
+                          min={bounds.min}
+                          max={bounds.max}
+                          value={draftMax}
+                          onChange={(e) => setDraftMax(e.target.value)}
+                          placeholder={String(bounds.max)}
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      className="shop-price-apply"
+                      onClick={onApplyPrice}
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </>
+              )}
+              </div>
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }
@@ -228,6 +274,7 @@ const ShopFilters = ({
 const Shop = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [chipsOpen, setChipsOpen] = useState(false)
   const [filtering, setFiltering] = useState(false)
   const skipFilterLoader = useRef(true)
   const filterLoaderTimer = useRef(null)
@@ -456,28 +503,63 @@ const Shop = () => {
 
   const chips = useMemo(() => {
     const items = []
-    if (filters.q) items.push({ key: 'q', label: `“${filters.q}”` })
+    if (filters.q) {
+      items.push({ key: 'q', label: `“${filters.q}”`, group: 'Search' })
+    }
     filters.categories.forEach((id) => {
       const group = categoryGroups.find((g) => g.id === id)
       items.push({
         key: `category:${id}`,
         label: group?.name || id,
+        group: 'Category',
       })
     })
-    if (filters.sub) items.push({ key: 'sub', label: filters.sub })
+    if (filters.sub) {
+      items.push({ key: 'sub', label: filters.sub, group: 'Type' })
+    }
     filters.tags.forEach((tag) => {
-      items.push({ key: `tag:${tag}`, label: TAG_LABELS[tag] || tag })
+      items.push({
+        key: `tag:${tag}`,
+        label: TAG_LABELS[tag] || tag,
+        group: 'Collection',
+      })
     })
     filters.sizes.forEach((size) => {
-      items.push({ key: `size:${size}`, label: size })
+      items.push({ key: `size:${size}`, label: size, group: 'Size' })
     })
     if (filters.min !== '' || filters.max !== '') {
       const minLabel = filters.min !== '' ? `₹${filters.min}` : `₹${bounds.min}`
       const maxLabel = filters.max !== '' ? `₹${filters.max}` : `₹${bounds.max}`
-      items.push({ key: 'price', label: `${minLabel} - ${maxLabel}` })
+      items.push({
+        key: 'price',
+        label: `${minLabel} - ${maxLabel}`,
+        group: 'Price',
+      })
     }
     return items
   }, [filters, bounds])
+
+  const VISIBLE_CHIP_COUNT = 3
+  const visibleChips = chips.slice(0, VISIBLE_CHIP_COUNT)
+  const hiddenChipCount = Math.max(0, chips.length - VISIBLE_CHIP_COUNT)
+
+  useEffect(() => {
+    if (chips.length <= VISIBLE_CHIP_COUNT) setChipsOpen(false)
+  }, [chips.length])
+
+  useEffect(() => {
+    if (!chipsOpen) return undefined
+    const onKey = (e) => {
+      if (e.key === 'Escape') setChipsOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
+  }, [chipsOpen])
 
   const removeChip = (key) => {
     if (key.startsWith('size:')) {
@@ -634,7 +716,7 @@ const Shop = () => {
 
                 {chips.length > 0 && (
                   <div className="shop-chips" aria-label="Active filters">
-                    {chips.map((chip) => (
+                    {visibleChips.map((chip) => (
                       <button
                         key={chip.key}
                         type="button"
@@ -645,6 +727,17 @@ const Shop = () => {
                         <CloseIcon size={12} />
                       </button>
                     ))}
+                    {hiddenChipCount > 0 && (
+                      <button
+                        type="button"
+                        className="shop-chip shop-chip--more"
+                        aria-haspopup="dialog"
+                        aria-expanded={chipsOpen}
+                        onClick={() => setChipsOpen(true)}
+                      >
+                        +{hiddenChipCount} more
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="shop-chips__clear"
@@ -708,8 +801,6 @@ const Shop = () => {
             </div>
           </div>
         </section>
-
-        <FaqSection page="shop" title="Shopping help" />
       </main>
 
       <div
@@ -751,6 +842,83 @@ const Shop = () => {
             </button>
           </div>
         </aside>
+      </div>
+
+      <div
+        className={`shop-chips-popup${chipsOpen ? ' is-open' : ''}`}
+        aria-hidden={!chipsOpen}
+      >
+        <button
+          type="button"
+          className="shop-chips-popup__backdrop"
+          aria-label="Close active filters"
+          tabIndex={chipsOpen ? 0 : -1}
+          onClick={() => setChipsOpen(false)}
+        />
+        <div
+          className="shop-chips-popup__panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="shop-chips-popup-title"
+        >
+          <div className="shop-chips-popup__head">
+            <div>
+              <p className="shop-chips-popup__eyebrow">Applied</p>
+              <h2 id="shop-chips-popup-title">
+                {chips.length} filter{chips.length === 1 ? '' : 's'}
+              </h2>
+            </div>
+            <button
+              type="button"
+              className="shop-chips-popup__close"
+              aria-label="Close"
+              onClick={() => setChipsOpen(false)}
+            >
+              <CloseIcon size={18} />
+            </button>
+          </div>
+
+          <ul className="shop-chips-popup__list">
+            {chips.map((chip) => (
+              <li key={chip.key}>
+                <div className="shop-chips-popup__item">
+                  <div className="shop-chips-popup__meta">
+                    <span className="shop-chips-popup__group">{chip.group}</span>
+                    <strong>{chip.label}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className="shop-chips-popup__remove"
+                    aria-label={`Remove ${chip.label}`}
+                    onClick={() => removeChip(chip.key)}
+                  >
+                    <CloseIcon size={14} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="shop-chips-popup__foot">
+            <button
+              type="button"
+              className="shop-chips-popup__clear"
+              onClick={() => {
+                clearAll()
+                setChipsOpen(false)
+              }}
+            >
+              Clear all
+            </button>
+            <button
+              type="button"
+              className="shop-chips-popup__done"
+              onClick={() => setChipsOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>
       </div>
 
       <Footer />

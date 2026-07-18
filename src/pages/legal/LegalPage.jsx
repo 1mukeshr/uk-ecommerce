@@ -1,11 +1,9 @@
 import { useEffect } from 'react'
-import { NavLink } from 'react-router-dom'
 import Breadcrumb from '../../components/layout/Breadcrumb'
-import FaqSection from '../../components/layout/FaqSection'
 import Footer from '../../components/layout/Footer'
 import { PhoneIcon, MailIcon } from '../../components/icons'
 import { ROUTES } from '../../config'
-import { LEGAL_NAV, policies } from './policyContent'
+import { policies } from './policyContent'
 
 const LegalPage = ({ policyId }) => {
   const policy = policies[policyId]
@@ -34,34 +32,9 @@ const LegalPage = ({ policyId }) => {
         <section className="legal-shell" aria-label={policy.title}>
           <div className="legal-panel">
             <div className="legal-panel__top">
-              <p className="legal-panel__kicker">Customer care policy</p>
               <h1>{policy.title}</h1>
               <p>{policy.intro}</p>
               <p className="legal-panel__meta">Updated {policy.updated}</p>
-            </div>
-
-            <nav className="legal-tabs" aria-label="Policies">
-              {LEGAL_NAV.map((item) => (
-                <NavLink
-                  key={item.id}
-                  to={item.path}
-                  end
-                  className={({ isActive }) =>
-                    `legal-tabs__tab${isActive ? ' is-active' : ''}`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-
-            <div className="legal-toc" aria-label="On this page">
-              {policy.sections.map((section, index) => (
-                <a key={section.heading} href={`#legal-${index + 1}`}>
-                  <span>{String(index + 1).padStart(2, '0')}</span>
-                  {section.heading}
-                </a>
-              ))}
             </div>
 
             <article className="legal-content">
@@ -102,12 +75,6 @@ const LegalPage = ({ policyId }) => {
             </div>
           </div>
         </section>
-
-        <FaqSection
-          page="legal"
-          title="Policy questions"
-          className="faq-section--soft"
-        />
       </main>
       <Footer />
     </>

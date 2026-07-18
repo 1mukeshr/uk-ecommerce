@@ -1,12 +1,13 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Breadcrumb from '../../components/layout/Breadcrumb'
 import Footer from '../../components/layout/Footer'
 import {
+  ArrowRightIcon,
+  CloseIcon,
   LogOutIcon,
   MailIcon,
   PackageIcon,
-  PhoneIcon,
   TruckIcon,
   UserIcon,
 } from '../../components/icons'
@@ -25,13 +26,16 @@ const initialsFrom = (name, email) => {
 
 const formatPrice = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`
 
-const formatDate = (iso) => {
+const formatDateTime = (iso) => {
   if (!iso) return '-'
   try {
-    return new Date(iso).toLocaleDateString('en-IN', {
+    return new Date(iso).toLocaleString('en-IN', {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
     })
   } catch {
     return '-'
@@ -144,14 +148,46 @@ export const AccountPage = () => {
 
 export const OrdersPage = () => {
   const { user } = useAuth()
-  const orders = useMemo(
-    () => getOrdersForUser(user?.email),
-    [user?.email]
+  const [activeOrderId, setActiveOrderId] = useState(null)
+  const orders = useMemo(() => getOrdersForUser(user), [user])
+
+  const activeOrder = useMemo(
+    () => orders.find((order) => order.id === activeOrderId) || null,
+    [orders, activeOrderId]
   )
+
+  useEffect(() => {
+    if (!activeOrder) return undefined
+
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') setActiveOrderId(null)
+    }
+    document.addEventListener('keydown', onKey)
+
+    return () => {
+      document.body.style.overflow = prevOverflow
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [activeOrder])
+
+  const activeItems = activeOrder?.items || []
+  const activeItemCount = activeItems.reduce(
+    (sum, item) => sum + (item.qty || 1),
+    0
+  )
+
+  const openOrderPopup = (orderId) => {
+    setActiveOrderId(orderId)
+  }
+
+  const closeOrderPopup = () => setActiveOrderId(null)
 
   return (
     <>
-      <main className="account-page">
+      <main className="account-page orders-page">
         <div className="breadcrumb-bar">
           <div className="container">
             <Breadcrumb
@@ -163,47 +199,32 @@ export const OrdersPage = () => {
           </div>
         </div>
 
-        <section className="orders-shell">
+        <section className="orders-shell" aria-labelledby="orders-title">
           <div className="container orders-shell__inner">
             <header className="orders-head">
-              <div>
-                <p className="orders-head__kicker">Order history</p>
-                <h1>My orders</h1>
+              <div className="orders-head__copy">
+                <h1 id="orders-title">My orders</h1>
                 <p>
-                  Track deliveries, review past purchases, and reorder your
-                  favourites.
+                  {orders.length === 0
+                    ? 'Track deliveries and revisit past hill finds here.'
+                    : `${orders.length} order${orders.length === 1 ? '' : 's'} · ships in 24–48 hrs`}
                 </p>
               </div>
-              <div className="orders-head__meta">
-                <span>{orders.length} order{orders.length === 1 ? '' : 's'}</span>
-                <Link to={ROUTES.SHOP}>Continue shopping</Link>
-              </div>
+              <Link to={ROUTES.SHOP} className="orders-head__shop">
+                Continue shopping
+                <ArrowRightIcon size={15} />
+              </Link>
             </header>
-
-            <div className="orders-trust">
-              <div>
-                <TruckIcon size={16} />
-                <span>Usually ships in 24-48 hrs</span>
-              </div>
-              <div>
-                <PackageIcon size={16} />
-                <span>Pan-India delivery in 2-5 days</span>
-              </div>
-              <div>
-                <PhoneIcon size={16} />
-                <span>Support on WhatsApp anytime</span>
-              </div>
-            </div>
 
             {orders.length === 0 ? (
               <div className="orders-empty">
                 <span className="orders-empty__icon" aria-hidden="true">
-                  <PackageIcon size={28} />
+                  <PackageIcon size={26} />
                 </span>
                 <h2>No orders yet</h2>
                 <p>
-                  Your purchases will appear here after checkout - with order ID,
-                  status, and item details.
+                  When you place an order, it will show up here with status,
+                  items, and delivery details.
                 </p>
                 <div className="orders-empty__actions">
                   <Link to={ROUTES.SHOP} className="btn-hero-primary">
@@ -216,82 +237,205 @@ export const OrdersPage = () => {
               </div>
             ) : (
               <ul className="orders-list">
-                {orders.map((order) => (
-                  <li key={order.id} className="order-card">
-                    <div className="order-card__top">
-                      <div>
-                        <span className="order-card__id">{order.id}</span>
-                        <p className="order-card__date">
-                          Placed on {formatDate(order.createdAt)}
-                        </p>
-                      </div>
-                      <span
-                        className={`order-card__status ${statusClass(order.status)}`}
-                      >
-                        {order.status || 'Placed'}
-                      </span>
-                    </div>
+                {orders.map((order) => {
+                  const items = order.items || []
+                  const preview = items.slice(0, 3)
+                  const extra = Math.max(0, items.length - preview.length)
+                  const itemCount = items.reduce(
+                    (sum, item) => sum + (item.qty || 1),
+                    0
+                  )
 
-                    <div className="order-card__items">
-                      {(order.items || []).slice(0, 3).map((item, idx) => (
-                        <div
-                          key={`${order.id}-${item.id || idx}`}
-                          className="order-card__item"
-                        >
-                          {item.image ? (
-                            <img
-                              src={item.image}
-                              alt=""
-                              loading="lazy"
-                              decoding="async"
-                            />
-                          ) : (
-                            <span className="order-card__item-fallback">
-                              <PackageIcon size={14} />
+                  return (
+                    <li key={order.id} className="order-card">
+                      <div className="order-card__main">
+                        <div className="order-card__thumbs" aria-hidden="true">
+                          {preview.map((item, idx) =>
+                            item.image ? (
+                              <img
+                                key={`${order.id}-thumb-${item.id || idx}`}
+                                src={item.image}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                style={{ zIndex: preview.length - idx }}
+                              />
+                            ) : (
+                              <span
+                                key={`${order.id}-thumb-${idx}`}
+                                className="order-card__thumb-fallback"
+                                style={{ zIndex: preview.length - idx }}
+                              >
+                                <PackageIcon size={14} />
+                              </span>
+                            )
+                          )}
+                          {extra > 0 && (
+                            <span className="order-card__thumb-more">
+                              +{extra}
                             </span>
                           )}
-                          <div>
-                            <strong>{item.name}</strong>
-                            <span>
-                              {item.size ? `${item.size} · ` : ''}
-                              Qty {item.qty || 1}
+                        </div>
+
+                        <div className="order-card__info">
+                          <div className="order-card__top">
+                            <div>
+                              <span className="order-card__id">{order.id}</span>
+                              <p className="order-card__date">
+                                {formatDateTime(order.createdAt)}
+                                {order.city
+                                  ? ` · ${order.city}${
+                                      order.state ? `, ${order.state}` : ''
+                                    }`
+                                  : ''}
+                              </p>
+                            </div>
+                            <span
+                              className={`order-card__status ${statusClass(
+                                order.status
+                              )}`}
+                            >
+                              {order.status || 'Placed'}
                             </span>
                           </div>
-                          <em>{formatPrice(item.price * (item.qty || 1))}</em>
-                        </div>
-                      ))}
-                      {(order.items || []).length > 3 && (
-                        <p className="order-card__more">
-                          +{(order.items || []).length - 3} more item
-                          {(order.items || []).length - 3 === 1 ? '' : 's'}
-                        </p>
-                      )}
-                    </div>
 
-                    <div className="order-card__foot">
-                      <div>
-                        <span>Payment</span>
-                        <strong>{paymentLabel(order.payment)}</strong>
+                          <ul className="order-card__names">
+                            {preview.map((item, idx) => (
+                              <li key={`${order.id}-name-${item.id || idx}`}>
+                                {item.name}
+                                {item.size ? ` · ${item.size}` : ''}
+                                {(item.qty || 1) > 1
+                                  ? ` ×${item.qty}`
+                                  : ''}
+                              </li>
+                            ))}
+                            {extra > 0 && (
+                              <li>
+                                <button
+                                  type="button"
+                                  className="order-card__names-more"
+                                  onClick={() => openOrderPopup(order.id)}
+                                >
+                                  +{extra} more item
+                                  {extra === 1 ? '' : 's'}
+                                </button>
+                              </li>
+                            )}
+                          </ul>
+                        </div>
                       </div>
-                      <div>
-                        <span>Ship to</span>
-                        <strong>
-                          {order.city || '-'}
-                          {order.state ? `, ${order.state}` : ''}
-                        </strong>
-                      </div>
-                      <div className="order-card__total">
-                        <span>Total</span>
+
+                      <div className="order-card__foot">
+                        <span>
+                          {itemCount} item{itemCount === 1 ? '' : 's'}
+                        </span>
+                        <span>{paymentLabel(order.payment)}</span>
                         <strong>{formatPrice(order.total)}</strong>
                       </div>
-                    </div>
-                  </li>
-                ))}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </div>
         </section>
       </main>
+
+      {activeOrder && (
+        <div
+          className="orders-detail-popup"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="orders-detail-title"
+        >
+          <button
+            type="button"
+            className="orders-detail-popup__backdrop"
+            aria-label="Close order details"
+            onClick={closeOrderPopup}
+          />
+          <div className="orders-detail-popup__panel">
+            <header className="orders-detail-popup__head">
+              <div>
+                <p className="orders-detail-popup__eyebrow">Order details</p>
+                <h2 id="orders-detail-title">{activeOrder.id}</h2>
+                <p className="orders-detail-popup__date">
+                  {formatDateTime(activeOrder.createdAt)}
+                </p>
+              </div>
+              <div className="orders-detail-popup__head-actions">
+                <span
+                  className={`order-card__status ${statusClass(
+                    activeOrder.status
+                  )}`}
+                >
+                  {activeOrder.status || 'Placed'}
+                </span>
+                <button
+                  type="button"
+                  className="orders-detail-popup__close"
+                  aria-label="Close"
+                  onClick={closeOrderPopup}
+                >
+                  <CloseIcon size={16} />
+                </button>
+              </div>
+            </header>
+
+            <ul className="orders-detail-popup__items">
+              {activeItems.map((item, idx) => (
+                <li key={`${activeOrder.id}-popup-${item.id || idx}`}>
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <span className="orders-detail-popup__fallback">
+                      <PackageIcon size={16} />
+                    </span>
+                  )}
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>
+                      {item.size ? `${item.size} · ` : ''}
+                      Qty {item.qty || 1}
+                    </span>
+                  </div>
+                  <em>{formatPrice(item.price * (item.qty || 1))}</em>
+                </li>
+              ))}
+            </ul>
+
+            <div className="orders-detail-popup__meta">
+              <div>
+                <span>Items</span>
+                <strong>
+                  {activeItemCount} item{activeItemCount === 1 ? '' : 's'}
+                </strong>
+              </div>
+              <div>
+                <span>Payment</span>
+                <strong>{paymentLabel(activeOrder.payment)}</strong>
+              </div>
+              <div>
+                <span>Ship to</span>
+                <strong>
+                  {activeOrder.city || '-'}
+                  {activeOrder.state ? `, ${activeOrder.state}` : ''}
+                </strong>
+              </div>
+              <div className="orders-detail-popup__total">
+                <span>Total</span>
+                <strong>{formatPrice(activeOrder.total)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <Footer />
     </>
   )

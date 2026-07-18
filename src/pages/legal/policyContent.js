@@ -1,9 +1,3 @@
-export const LEGAL_NAV = [
-  { id: 'privacy', path: '/privacy', label: 'Privacy policy' },
-  { id: 'terms', path: '/terms', label: 'Terms & conditions' },
-  { id: 'refunds', path: '/refunds', label: 'Refunds & returns' },
-]
-
 export const policies = {
   privacy: {
     id: 'privacy',

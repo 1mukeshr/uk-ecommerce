@@ -1,6 +1,7 @@
 import FaqSection from '../components/layout/FaqSection'
 import Footer from '../components/layout/Footer'
 import HeroBanner from '../components/layout/HeroBanner'
+import OfferBanner from '../components/layout/OfferBanner'
 import ProductSection from '../components/products/ProductSection'
 import {
   ShieldIcon,
@@ -25,7 +26,7 @@ const whyIcons = {
 
 /**
  * Home UX flow:
- * Banner → Trust → Best Sellers → Trending → Why us → Handpicked → Reviews
+ * Banner → Trust → Best Sellers → Offers → Trending → Why us → Handpicked → Reviews
  */
 const Home = () => {
   return (
@@ -37,29 +38,29 @@ const Home = () => {
         <section className="benefits benefits--home" aria-label="Why shop with us">
           <div className="container benefits-grid">
             <div className="benefit-item">
-              <div className="benefit-icon"><ShieldIcon size={20} /></div>
-              <div>
+              <div className="benefit-icon" aria-hidden="true"><ShieldIcon size={22} /></div>
+              <div className="benefit-copy">
                 <h4>Secure pay</h4>
                 <p>Safe checkout every time</p>
               </div>
             </div>
             <div className="benefit-item">
-              <div className="benefit-icon"><TruckIcon size={20} /></div>
-              <div>
+              <div className="benefit-icon" aria-hidden="true"><TruckIcon size={22} /></div>
+              <div className="benefit-copy">
                 <h4>Free shipping</h4>
                 <p>On orders above ₹499</p>
               </div>
             </div>
             <div className="benefit-item">
-              <div className="benefit-icon"><CheckCircleIcon size={20} /></div>
-              <div>
+              <div className="benefit-icon" aria-hidden="true"><CheckCircleIcon size={22} /></div>
+              <div className="benefit-copy">
                 <h4>100% natural</h4>
                 <p>No artificial additives</p>
               </div>
             </div>
             <div className="benefit-item">
-              <div className="benefit-icon"><HillsIcon size={20} /></div>
-              <div>
+              <div className="benefit-icon" aria-hidden="true"><HillsIcon size={22} /></div>
+              <div className="benefit-copy">
                 <h4>From the hills</h4>
                 <p>Direct from local makers</p>
               </div>
@@ -71,17 +72,19 @@ const Home = () => {
         <ProductSection
           id="bestsellers"
           title="Best Sellers"
-          subtitle="Favourites pahadi families order again and again."
+          subtitle="Most-loved hill products families reorder every season."
           tag="bestseller"
           limit={5}
           seeAllHref={`${ROUTES.SHOP}?tag=bestseller`}
         />
 
+        <OfferBanner />
+
         {/* What’s hot */}
         <ProductSection
           id="trending"
           title="Trending now"
-          subtitle="Fresh picks shoppers are adding to bag right now."
+          subtitle="What shoppers are discovering and adding to bag today."
           tag="trending"
           limit={5}
           seeAllHref={`${ROUTES.SHOP}?tag=trending`}
@@ -132,7 +135,7 @@ const Home = () => {
         <ProductSection
           id="handpicked"
           title="Handpicked for you"
-          subtitle="Seasonal favourites and artisan finds from the mountains."
+          subtitle="Fresh harvests and handmade finds from Himalayan makers."
           tag="handpicked"
           limit={5}
           seeAllHref={`${ROUTES.SHOP}?tag=handpicked`}

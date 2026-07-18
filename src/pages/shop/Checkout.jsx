@@ -5,6 +5,7 @@ import Footer from '../../components/layout/Footer'
 import {
   CheckCircleIcon,
   CloseIcon,
+  GiftIcon,
   ShieldIcon,
   TruckIcon,
   CartIcon,
@@ -12,27 +13,29 @@ import {
   UpiIcon,
   CardPayIcon,
 } from '../../components/icons'
-import { ROUTES, STORAGE } from '../../config'
+import { ROUTES, STORAGE, productPath } from '../../config'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { saveOrder } from '../../utils/ordersStorage'
+import { createOrder, validateCoupon } from '../../services/orderService'
+import {
+  INDIA_STATES,
+  LOCATION_EVENT,
+  locationToCheckoutFields,
+  matchState,
+  readLocation,
+  upsertAddress,
+} from '../../utils/locationStorage'
+import {
+  FREE_SHIP_AT,
+  applyCoupon,
+  calcShipping,
+  normalizeCouponCode,
+} from '../../data/coupons'
 
-const FREE_SHIP_AT = 499
-const SHIPPING_FEE = 49
-const ORDER_POPUP_MS = 35000
+const ORDER_POPUP_MS = 20000
 
-const STATES = [
-  'Uttarakhand',
-  'Himachal Pradesh',
-  'Delhi',
-  'Uttar Pradesh',
-  'Haryana',
-  'Punjab',
-  'Rajasthan',
-  'Maharashtra',
-  'Karnataka',
-  'Other',
-]
+const STATES = INDIA_STATES
 
 const PAYMENTS = [
   { id: 'cod', title: 'COD', desc: 'Pay on delivery', Icon: CodIcon },
@@ -56,47 +59,30 @@ const readJson = (key) => {
   }
 }
 
-const parseLocation = (location) => {
-  if (!location) return { city: '', state: '', pincode: '' }
-  const pincode = location.pin || ''
-  let city = ''
-  let state = ''
-  if (location.label) {
-    const parts = String(location.label)
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    if (parts[0]) city = parts[0]
-    if (parts[1]) {
-      const match = STATES.find(
-        (s) => s.toLowerCase() === parts[1].toLowerCase()
-      )
-      state = match || parts[1]
-    }
-  }
-  return { city, state, pincode }
-}
+const parseLocation = (location) => locationToCheckoutFields(location)
 
 const buildInitialForm = (user) => {
   const saved = readJson(STORAGE.CHECKOUT_ADDRESS) || {}
-  const fromLoc = parseLocation(readJson(STORAGE.LOCATION))
+  const fromLoc = parseLocation(readLocation())
   const state =
-    saved.state && STATES.includes(saved.state)
-      ? saved.state
-      : fromLoc.state && STATES.includes(fromLoc.state)
-        ? fromLoc.state
+    fromLoc.state && STATES.includes(fromLoc.state)
+      ? fromLoc.state
+      : saved.state && STATES.includes(saved.state)
+        ? saved.state
         : 'Uttarakhand'
 
   return {
-    name: user?.name || saved.name || '',
+    name: user?.name || fromLoc.name || saved.name || '',
     email: user?.email || saved.email || '',
-    phone: saved.phone || '',
-    address: saved.address || '',
-    landmark: saved.landmark || '',
-    city: saved.city || fromLoc.city || '',
+    phone: fromLoc.phone || saved.phone || '',
+    address: fromLoc.address || saved.address || '',
+    landmark: fromLoc.landmark || saved.landmark || '',
+    city: fromLoc.city || saved.city || '',
     state,
-    pincode: saved.pincode || fromLoc.pincode || '',
+    pincode: fromLoc.pincode || saved.pincode || '',
     notes: '',
+    addressId: fromLoc.addressId || '',
+    tag: fromLoc.tag || 'Home',
   }
 }
 
@@ -114,6 +100,22 @@ const persistAddress = (form) => {
         state: form.state,
         pincode: form.pincode.trim(),
       })
+    )
+    // Upsert into saved delivery addresses + set as active
+    upsertAddress(
+      {
+        id: form.addressId || null,
+        tag: form.tag || 'Home',
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        line1: form.address.trim(),
+        area: form.landmark.trim(),
+        city: form.city.trim(),
+        state: form.state,
+        pin: form.pincode.trim(),
+        source: 'checkout',
+      },
+      { select: true }
     )
   } catch {
     /* ignore quota */
@@ -140,6 +142,49 @@ const Checkout = () => {
   const [placing, setPlacing] = useState(false)
   const [order, setOrder] = useState(null)
   const [showNote, setShowNote] = useState(false)
+  const [placeError, setPlaceError] = useState('')
+  const [couponInput, setCouponInput] = useState('')
+  const [appliedCoupon, setAppliedCoupon] = useState(null)
+  const [couponError, setCouponError] = useState('')
+  const [couponLoading, setCouponLoading] = useState(false)
+
+  // Live-sync header location → checkout fields
+  useEffect(() => {
+    const applyLocation = (detail) => {
+      const fields = locationToCheckoutFields(detail || readLocation())
+      if (!fields.address && !fields.city && !fields.pincode) return
+      setForm((prev) => ({
+        ...prev,
+        address: fields.address || prev.address,
+        landmark: fields.landmark || prev.landmark,
+        city: fields.city || prev.city,
+        state: matchState(fields.state) || prev.state,
+        pincode: fields.pincode || prev.pincode,
+        name: fields.name || prev.name,
+        phone: fields.phone || prev.phone,
+        addressId: fields.addressId || prev.addressId,
+        tag: fields.tag || prev.tag,
+      }))
+    }
+
+    const onCustom = (e) => applyLocation(e.detail)
+    const onStorage = (e) => {
+      if (e.key === STORAGE.LOCATION) {
+        try {
+          applyLocation(e.newValue ? JSON.parse(e.newValue) : null)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    window.addEventListener(LOCATION_EVENT, onCustom)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener(LOCATION_EVENT, onCustom)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [])
 
   const dismissOrderPopup = useCallback(() => {
     setOrder(null)
@@ -166,10 +211,72 @@ const Checkout = () => {
     }
   }, [order, dismissOrderPopup])
 
-  const shipping = cartTotal >= FREE_SHIP_AT ? 0 : SHIPPING_FEE
-  const payable = cartTotal + shipping
+  const shipping = calcShipping(cartTotal)
+  const discount = appliedCoupon?.discount || 0
+  const payable = Math.max(0, cartTotal - discount + shipping)
   const shipLeft = Math.max(0, FREE_SHIP_AT - cartTotal)
   const shipProgress = Math.min(100, Math.round((cartTotal / FREE_SHIP_AT) * 100))
+
+  useEffect(() => {
+    if (!appliedCoupon?.code) return
+    const code = appliedCoupon.code
+    const refreshed = applyCoupon(cartTotal, code, { isFirstOrder: true })
+    if (!refreshed.ok) {
+      setAppliedCoupon(null)
+      setCouponError(refreshed.message)
+      return
+    }
+    setAppliedCoupon((prev) =>
+      prev && prev.discount === refreshed.discount && prev.code === refreshed.code
+        ? prev
+        : refreshed
+    )
+  }, [cartTotal]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onApplyCoupon = async (e) => {
+    e?.preventDefault?.()
+    const code = normalizeCouponCode(couponInput)
+    setCouponError('')
+    if (!code) {
+      setCouponError('Enter a coupon code')
+      return
+    }
+    if (!cartTotal) {
+      setCouponError('Add items to bag before applying a coupon')
+      return
+    }
+
+    setCouponLoading(true)
+    try {
+      const result = await validateCoupon({
+        code,
+        subtotal: cartTotal,
+        email: form.email.trim(),
+      })
+      setAppliedCoupon(result)
+      setCouponInput(result.code || code)
+      setCouponError('')
+    } catch (err) {
+      // Offline / API down — still allow local preview for known codes
+      const local = applyCoupon(cartTotal, code, { isFirstOrder: true })
+      if (local.ok && /API|server|reach/i.test(err.message || '')) {
+        setAppliedCoupon(local)
+        setCouponInput(local.code)
+        setCouponError('')
+      } else {
+        setAppliedCoupon(null)
+        setCouponError(err.message || local.message || 'Invalid coupon')
+      }
+    } finally {
+      setCouponLoading(false)
+    }
+  }
+
+  const onRemoveCoupon = () => {
+    setAppliedCoupon(null)
+    setCouponInput('')
+    setCouponError('')
+  }
 
   const onChange = (e) => {
     const { name, value } = e.target
@@ -204,17 +311,21 @@ const Checkout = () => {
     return Object.keys(next).length === 0
   }
 
-  const placeOrder = (e) => {
+  const placeOrder = async (e) => {
     e?.preventDefault?.()
-    if (!cart.length || !validate()) return
+    if (!cart.length || !validate() || placing) return
 
     setPlacing(true)
-    const orderId = makeOrderId()
+    setPlaceError('')
+
+    const localId = makeOrderId()
     const placed = {
-      id: orderId,
+      id: localId,
       payment,
       total: payable,
       shipping,
+      discount,
+      couponCode: appliedCoupon?.code || '',
       itemCount: cart.length,
       items: cart.map((item) => ({
         id: item.id,
@@ -224,7 +335,9 @@ const Checkout = () => {
         size: item.size,
         image: item.image,
       })),
-      email: form.email.trim(),
+      email: form.email.trim().toLowerCase(),
+      userEmail: (user?.email || form.email).trim().toLowerCase(),
+      userId: user?.id || user?._id || null,
       name: form.name.trim(),
       phone: form.phone.trim(),
       city: form.city.trim(),
@@ -236,7 +349,48 @@ const Checkout = () => {
       createdAt: new Date().toISOString(),
       status: 'Placed',
     }
-    window.setTimeout(() => {
+
+    try {
+      const apiOrder = await createOrder({
+        customerName: placed.name,
+        customerEmail: placed.email,
+        customerPhone: placed.phone,
+        paymentMethod: payment,
+        couponCode: appliedCoupon?.code || '',
+        notes: [placed.notes, placed.landmark ? `Landmark: ${placed.landmark}` : '']
+          .filter(Boolean)
+          .join('\n'),
+        shippingAddress: {
+          line1: placed.address,
+          city: placed.city,
+          state: placed.state,
+          pincode: placed.pincode,
+        },
+        items: placed.items.map((item) => ({
+          name: item.name,
+          quantity: item.qty || 1,
+          price: item.price,
+        })),
+      })
+
+      if (apiOrder?.orderNumber) {
+        placed.id = apiOrder.orderNumber
+        placed.paymentStatus = apiOrder.paymentStatus
+        placed.apiId = apiOrder.id
+        if (typeof apiOrder.totalAmount === 'number') {
+          placed.total = apiOrder.totalAmount
+        }
+        if (typeof apiOrder.shippingFee === 'number') {
+          placed.shipping = apiOrder.shippingFee
+        }
+        if (typeof apiOrder.discountAmount === 'number') {
+          placed.discount = apiOrder.discountAmount
+        }
+        if (apiOrder.couponCode) {
+          placed.couponCode = apiOrder.couponCode
+        }
+      }
+
       persistAddress(form)
       saveOrder(placed)
       setOrder({
@@ -246,12 +400,16 @@ const Checkout = () => {
         shipping: placed.shipping,
         items: placed.itemCount,
         email: placed.email,
+        paymentStatus: placed.paymentStatus,
       })
       clearCart()
       closeCart()
-      setPlacing(false)
       window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
-    }, 700)
+    } catch (err) {
+      setPlaceError(err.message || 'Could not place order. Is the API running?')
+    } finally {
+      setPlacing(false)
+    }
   }
 
   const breadcrumbItems = useMemo(
@@ -307,38 +465,47 @@ const Checkout = () => {
               aria-label="Close"
               onClick={dismissOrderPopup}
             >
-              <CloseIcon size={18} />
+              <CloseIcon size={16} />
             </button>
 
+            <p className="order-popup__brand">PahadLink</p>
+
             <span className="order-popup__icon" aria-hidden="true">
-              <CheckCircleIcon size={34} />
+              <CheckCircleIcon size={36} />
             </span>
+
             <p className="order-popup__kicker">Order confirmed</p>
-            <h2 id="order-popup-title">Thank you for your order</h2>
+            <h2 id="order-popup-title">Thank you</h2>
             <p className="order-popup__lead">
-              Order <strong>{order.id}</strong> is placed
               {order.email ? (
                 <>
-                  . Confirmation will go to <strong>{order.email}</strong>
+                  We emailed <strong>{order.email}</strong>
+                  {order.payment !== 'cod' ? <> with your receipt</> : null}.
                 </>
-              ) : null}
-              .
+              ) : (
+                <>Your pahadi order is confirmed and being packed.</>
+              )}
             </p>
 
-            <ul className="order-popup__meta">
-              <li>
-                <span>Payment</span>
-                <strong>{paymentLabel}</strong>
-              </li>
-              <li>
-                <span>Items</span>
-                <strong>{order.items}</strong>
-              </li>
-              <li>
-                <span>Total</span>
-                <strong>{formatPrice(order.total)}</strong>
-              </li>
-            </ul>
+            <p className="order-popup__id">
+              <span>Order</span>
+              <strong>{order.id}</strong>
+            </p>
+
+            <dl className="order-popup__meta">
+              <div>
+                <dt>Payment</dt>
+                <dd>{paymentLabel}</dd>
+              </div>
+              <div>
+                <dt>Items</dt>
+                <dd>{order.items}</dd>
+              </div>
+              <div>
+                <dt>Total</dt>
+                <dd>{formatPrice(order.total)}</dd>
+              </div>
+            </dl>
 
             <div className="order-popup__actions">
               <Link to={ROUTES.ORDERS} className="btn-hero-primary">
@@ -352,7 +519,6 @@ const Checkout = () => {
                 Continue shopping
               </button>
             </div>
-            <p className="order-popup__hint">Closes automatically in about 35 seconds</p>
           </div>
         </div>
       </>
@@ -388,7 +554,7 @@ const Checkout = () => {
 
   return (
     <>
-      <main className="checkout-page">
+      <main className="checkout-page checkout-page--bag">
         <div className="breadcrumb-bar">
           <div className="container">
             <Breadcrumb items={breadcrumbItems} />
@@ -396,26 +562,120 @@ const Checkout = () => {
         </div>
 
         <section className="checkout-shell" aria-label="Checkout">
-          <div className="container">
-            <nav className="bag-steps" aria-label="Checkout steps">
-              <button type="button" className="bag-steps__btn" onClick={openCart}>
-                Bag
-              </button>
-              <i />
-              <span className="is-active">Address</span>
-              <i />
-              <span className="is-active">Payment</span>
-            </nav>
+          <div className="container checkout-shell__inner">
+            <header className="checkout-top">
+              <div>
+                <h1>
+                  Checkout
+                  <em>
+                    · {cartCount} item{cartCount === 1 ? '' : 's'}
+                  </em>
+                </h1>
+              </div>
+              <nav className="checkout-steps" aria-label="Checkout steps">
+                <span className="is-active">Bag</span>
+                <i aria-hidden="true" />
+                <span className="is-active">Address</span>
+                <i aria-hidden="true" />
+                <span className="is-active">Payment</span>
+              </nav>
+            </header>
 
             <div className="checkout-shell__grid">
               <div className="checkout-main">
-                <header className="checkout-head">
-                  <h1>Checkout</h1>
-                  <p>
-                    {cartCount} item{cartCount === 1 ? '' : 's'} · enter delivery
-                    & payment
-                  </p>
-                </header>
+                {shipLeft > 0 ? (
+                  <div className="checkout-offer checkout-offer--ship">
+                    <TruckIcon size={16} />
+                    <p>
+                      Add <strong>{formatPrice(shipLeft)}</strong> more for free
+                      delivery
+                    </p>
+                    <div className="checkout-offer__bar" aria-hidden="true">
+                      <span style={{ width: `${shipProgress}%` }} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="checkout-offer checkout-offer--free">
+                    <TruckIcon size={15} />
+                    <p>
+                      <strong>Free delivery</strong> on this order
+                    </p>
+                  </div>
+                )}
+
+                <section className="checkout-card" aria-label="Bag items">
+                  <div className="checkout-card__head">
+                    <h2>Your bag</h2>
+                    <button
+                      type="button"
+                      className="checkout-card__link"
+                      onClick={openCart}
+                    >
+                      Edit
+                    </button>
+                  </div>
+
+                  <ul className="checkout-bag">
+                    {cart.map((item) => (
+                      <li key={item.key} className="checkout-bag__item">
+                        <Link
+                          to={productPath(item.id)}
+                          className="checkout-bag__thumb"
+                        >
+                          <img
+                            src={item.image}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        </Link>
+                        <div className="checkout-bag__body">
+                          <div className="checkout-bag__row">
+                            <div className="checkout-bag__info">
+                              <strong>{item.name}</strong>
+                              <span>{item.size || 'Standard'}</span>
+                            </div>
+                            <b>{formatPrice(item.price * item.qty)}</b>
+                          </div>
+                          <div className="checkout-bag__actions">
+                            <div className="checkout-bag__qty">
+                              <button
+                                type="button"
+                                aria-label="Decrease quantity"
+                                onClick={() =>
+                                  updateCartQty(item.key, item.qty - 1)
+                                }
+                              >
+                                −
+                              </button>
+                              <em>{item.qty}</em>
+                              <button
+                                type="button"
+                                aria-label="Increase quantity"
+                                disabled={
+                                  typeof item.maxStock === 'number' &&
+                                  item.qty >= item.maxStock
+                                }
+                                onClick={() =>
+                                  updateCartQty(item.key, item.qty + 1)
+                                }
+                              >
+                                +
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              className="checkout-bag__remove"
+                              onClick={() => removeFromCart(item.key)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
 
                 <form
                   id="checkout-form"
@@ -423,8 +683,11 @@ const Checkout = () => {
                   onSubmit={placeOrder}
                   noValidate
                 >
-                  <fieldset className="checkout-block">
-                    <legend>Contact</legend>
+                  <section className="checkout-card">
+                    <div className="checkout-card__head">
+                      <h2>Delivery address</h2>
+                    </div>
+
                     <div className="checkout-fields checkout-fields--2">
                       <label className="checkout-field">
                         <span>Full name</span>
@@ -454,6 +717,7 @@ const Checkout = () => {
                         )}
                       </label>
                     </div>
+
                     <label className="checkout-field">
                       <span>Email</span>
                       <input
@@ -468,10 +732,7 @@ const Checkout = () => {
                         <em className="checkout-error">{errors.email}</em>
                       )}
                     </label>
-                  </fieldset>
 
-                  <fieldset className="checkout-block">
-                    <legend>Delivery address</legend>
                     <label className="checkout-field">
                       <span>Address</span>
                       <textarea
@@ -485,6 +746,7 @@ const Checkout = () => {
                         <em className="checkout-error">{errors.address}</em>
                       )}
                     </label>
+
                     <label className="checkout-field">
                       <span>Landmark (optional)</span>
                       <input
@@ -494,6 +756,7 @@ const Checkout = () => {
                         placeholder="Near temple, market…"
                       />
                     </label>
+
                     <div className="checkout-fields checkout-fields--3">
                       <label className="checkout-field">
                         <span>City</span>
@@ -558,159 +821,164 @@ const Checkout = () => {
                         />
                       </label>
                     )}
-                  </fieldset>
+                  </section>
                 </form>
               </div>
 
-              <aside className="checkout-summary" aria-label="Order summary">
+              <aside className="checkout-summary" aria-label="Price details">
                 <div className="checkout-summary__panel">
-                  <div className="checkout-summary__head">
-                    <div>
-                      <h2>Order summary</h2>
-                      <p>
-                        {cartCount} item{cartCount === 1 ? '' : 's'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      className="checkout-summary__edit"
-                      onClick={openCart}
-                    >
-                      Edit bag
-                    </button>
-                  </div>
-
-                  <ul className="checkout-summary__list">
-                    {cart.map((item) => (
-                      <li key={item.key} className="checkout-summary__item">
-                        <div className="checkout-summary__thumb">
-                          <img
-                            src={item.image}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                          />
-                          <span>{item.qty}</span>
-                        </div>
-                        <div className="checkout-summary__meta">
-                          <div className="checkout-summary__title-row">
-                            <strong>{item.name}</strong>
-                            <b>{formatPrice(item.price * item.qty)}</b>
-                          </div>
-                          <span className="checkout-summary__size">
-                            {item.size}
+                  <section className="checkout-summary__offers">
+                    <h2>Offers</h2>
+                    {appliedCoupon?.ok || appliedCoupon?.code ? (
+                      <div className="checkout-summary__coupon-applied">
+                        <span
+                          className="checkout-summary__coupon-applied-icon"
+                          aria-hidden="true"
+                        >
+                          <CheckCircleIcon size={18} />
+                        </span>
+                        <div>
+                          <strong>{appliedCoupon.code}</strong>
+                          <span>
+                            {appliedCoupon.label || appliedCoupon.message}
                           </span>
-                          <div className="checkout-summary__controls">
-                            <div className="checkout-summary__qty">
-                              <button
-                                type="button"
-                                aria-label="Decrease quantity"
-                                onClick={() =>
-                                  updateCartQty(item.key, item.qty - 1)
-                                }
-                              >
-                                −
-                              </button>
-                              <em>{item.qty}</em>
-                              <button
-                                type="button"
-                                aria-label="Increase quantity"
-                                onClick={() =>
-                                  updateCartQty(item.key, item.qty + 1)
-                                }
-                              >
-                                +
-                              </button>
-                            </div>
-                            <button
-                              type="button"
-                              className="checkout-summary__remove"
-                              onClick={() => removeFromCart(item.key)}
-                            >
-                              Remove
-                            </button>
-                          </div>
                         </div>
-                      </li>
-                    ))}
-                  </ul>
+                        <button type="button" onClick={onRemoveCoupon}>
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <form
+                        className="checkout-summary__coupon-row"
+                        onSubmit={onApplyCoupon}
+                      >
+                        <span
+                          className="checkout-summary__coupon-icon"
+                          aria-hidden="true"
+                        >
+                          <GiftIcon size={16} />
+                        </span>
+                        <input
+                          id="checkout-coupon"
+                          type="text"
+                          value={couponInput}
+                          onChange={(e) => {
+                            setCouponInput(e.target.value)
+                            if (couponError) setCouponError('')
+                          }}
+                          placeholder="Enter coupon code"
+                          autoComplete="off"
+                          spellCheck={false}
+                          aria-label="Coupon code"
+                        />
+                        <button
+                          type="submit"
+                          disabled={couponLoading || !cart.length}
+                        >
+                          {couponLoading ? '…' : 'Apply'}
+                        </button>
+                      </form>
+                    )}
+                    {couponError && (
+                      <p className="checkout-error" role="alert">
+                        {couponError}
+                      </p>
+                    )}
+                    {!appliedCoupon?.code && (
+                      <div className="checkout-summary__coupon-hint">
+                        <span>Try</span>
+                        <button
+                          type="button"
+                          onClick={() => setCouponInput('PAHAD15')}
+                        >
+                          PAHAD15
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCouponInput('HILL50')}
+                        >
+                          HILL50
+                        </button>
+                      </div>
+                    )}
+                  </section>
 
-                  <div
-                    className={`checkout-summary__ship${
-                      shipLeft === 0 ? ' is-free' : ''
-                    }`}
-                  >
-                    <div className="checkout-summary__ship-row">
-                      <TruckIcon size={15} />
-                      {shipLeft > 0 ? (
-                        <p>
-                          Add <strong>{formatPrice(shipLeft)}</strong> more for
-                          free delivery
-                        </p>
-                      ) : (
-                        <p>
-                          <strong>Free delivery</strong> on this order
-                        </p>
-                      )}
-                    </div>
+                  <section className="checkout-summary__pay">
+                    <h2>Payment mode</h2>
                     <div
-                      className="checkout-summary__ship-bar"
-                      aria-hidden="true"
-                    >
-                      <span style={{ width: `${shipProgress}%` }} />
-                    </div>
-                  </div>
-
-                  <div className="checkout-summary__totals">
-                    <div>
-                      <span>Subtotal</span>
-                      <span>{formatPrice(cartTotal)}</span>
-                    </div>
-                    <div>
-                      <span>Delivery</span>
-                      <span className={shipping === 0 ? 'is-free' : undefined}>
-                        {shipping === 0 ? 'FREE' : formatPrice(shipping)}
-                      </span>
-                    </div>
-                    <div className="checkout-summary__payable">
-                      <span>Total</span>
-                      <strong>{formatPrice(payable)}</strong>
-                    </div>
-                  </div>
-
-                  <div className="checkout-summary__pay">
-                    <h3>Payment</h3>
-                    <div
-                      className="checkout-payments checkout-payments--chips"
+                      className="checkout-pay-mode"
                       role="radiogroup"
                       aria-label="Payment method"
                     >
                       {PAYMENTS.map((option) => {
                         const PayIcon = option.Icon
+                        const active = payment === option.id
                         return (
                           <label
                             key={option.id}
-                            className={`checkout-pay-chip${
-                              payment === option.id ? ' is-active' : ''
+                            className={`checkout-pay-mode__opt${
+                              active ? ' is-active' : ''
                             }`}
                           >
                             <input
                               type="radio"
                               name="payment"
                               value={option.id}
-                              checked={payment === option.id}
+                              checked={active}
                               onChange={() => setPayment(option.id)}
                             />
-                            <span className="checkout-pay-chip__icon" aria-hidden="true">
-                              <PayIcon size={22} />
+                            <span className="checkout-pay-mode__icon" aria-hidden="true">
+                              <PayIcon size={20} />
                             </span>
-                            <strong>{option.title}</strong>
-                            <span>{option.desc}</span>
+                            <span className="checkout-pay-mode__text">
+                              <strong>{option.title}</strong>
+                              <em>{option.desc}</em>
+                            </span>
+                            {active && (
+                              <span className="checkout-pay-mode__tick" aria-hidden="true">
+                                <CheckCircleIcon size={16} />
+                              </span>
+                            )}
                           </label>
                         )
                       })}
                     </div>
-                  </div>
+                  </section>
+
+                  <section className="checkout-summary__price">
+                    <h2>Price details</h2>
+                    <div className="checkout-summary__totals">
+                      <div>
+                        <span>Items total</span>
+                        <span>{formatPrice(cartTotal)}</span>
+                      </div>
+                      {discount > 0 && (
+                        <div className="checkout-summary__discount">
+                          <span>Coupon discount</span>
+                          <span>−{formatPrice(discount)}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span>Delivery</span>
+                        <span className={shipping === 0 ? 'is-free' : undefined}>
+                          {shipping === 0 ? 'FREE' : formatPrice(shipping)}
+                        </span>
+                      </div>
+                      <div className="checkout-summary__payable">
+                        <span>Total</span>
+                        <strong>{formatPrice(payable)}</strong>
+                      </div>
+                    </div>
+                  </section>
+
+                  {placeError && (
+                    <p
+                      className="checkout-error checkout-error--block"
+                      role="alert"
+                    >
+                      {placeError}
+                    </p>
+                  )}
 
                   <button
                     type="submit"
@@ -724,7 +992,8 @@ const Checkout = () => {
                   </button>
                   <p className="checkout-summary__secure">
                     <ShieldIcon size={13} />
-                    Secure checkout · {PAYMENTS.find((p) => p.id === payment)?.title || 'Pay'}
+                    PahadLink secure checkout ·{' '}
+                    {PAYMENTS.find((p) => p.id === payment)?.title || 'Pay'}
                   </p>
                 </div>
               </aside>
@@ -733,7 +1002,7 @@ const Checkout = () => {
         </section>
 
         <div className="checkout-mobile-bar">
-          <div>
+          <div className="checkout-mobile-bar__total">
             <span>Total</span>
             <strong>{formatPrice(payable)}</strong>
           </div>

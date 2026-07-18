@@ -17,6 +17,7 @@ import {
   RouteProgress,
 } from './components/layout'
 import SupportChat from './components/support/SupportChat'
+import ThemePicker from './components/theme/ThemePicker'
 import AppRoutes from './routes/AppRoutes'
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
           <AppRoutes />
           <CartDrawer />
           <MobileBottomNav />
+          <ThemePicker />
           <SupportChat />
         </HashRouter>
       </ShopProvider>

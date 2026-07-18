@@ -1,8 +1,9 @@
 ﻿import { memo, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { ROUTES, productPath } from '../../config'
-import { CartIcon, CloseIcon, TruckIcon } from '../icons'
+import { CartIcon, CloseIcon, TruckIcon, ArrowRightIcon } from '../icons'
 
 const formatPrice = (n) => `₹${n.toLocaleString('en-IN')}`
 const FREE_SHIP_AT = 499
@@ -13,6 +14,7 @@ const SHIPPING_FEE = 49
  */
 const CartDrawer = () => {
   const navigate = useNavigate()
+  const { isAuthenticated } = useAuth()
   const {
     cart,
     cartCount,
@@ -32,6 +34,12 @@ const CartDrawer = () => {
 
   const goCheckout = () => {
     closeCart()
+    if (!isAuthenticated) {
+      navigate(ROUTES.LOGIN, {
+        state: { from: ROUTES.CHECKOUT, intent: 'checkout' },
+      })
+      return
+    }
     navigate(ROUTES.CHECKOUT)
   }
 
@@ -153,36 +161,32 @@ const CartDrawer = () => {
                       </button>
                     </div>
 
-                    <span className="bag-drawer__size">
-                      Size: {item.size || '-'}
-                    </span>
-
-                    <div className="bag-drawer__item-bottom">
+                    <div className="bag-drawer__item-meta">
+                      <span className="bag-drawer__size">{item.size || '-'}</span>
                       <div className="bag-drawer__qty">
                         <button
                           type="button"
                           aria-label="Decrease quantity"
                           onClick={() => updateCartQty(item.key, item.qty - 1)}
                         >
-                          -
+                          −
                         </button>
                         <span>{item.qty}</span>
                         <button
                           type="button"
                           aria-label="Increase quantity"
+                          disabled={
+                            typeof item.maxStock === 'number' &&
+                            item.qty >= item.maxStock
+                          }
                           onClick={() => updateCartQty(item.key, item.qty + 1)}
                         >
                           +
                         </button>
                       </div>
-                      <div className="bag-drawer__prices">
-                        <span className="bag-drawer__unit">
-                          {formatPrice(item.price)} each
-                        </span>
-                        <span className="bag-drawer__price">
-                          {formatPrice(item.price * item.qty)}
-                        </span>
-                      </div>
+                      <span className="bag-drawer__price">
+                        {formatPrice(item.price * item.qty)}
+                      </span>
                     </div>
                   </div>
                 </li>
@@ -215,14 +219,8 @@ const CartDrawer = () => {
               className="bag-drawer__checkout"
               onClick={goCheckout}
             >
-              Continue · {formatPrice(payable)}
-            </button>
-            <button
-              type="button"
-              className="bag-drawer__continue"
-              onClick={closeCart}
-            >
-              Continue shopping
+              Proceed to checkout
+              <ArrowRightIcon size={16} />
             </button>
           </footer>
         )}

@@ -47,6 +47,8 @@ api.interceptors.response.use(
         'API URL missing in this build. Set public/runtime-config.json apiUrl (or VITE_API_URL) and redeploy.'
     } else if (error.response.data?.message) {
       message = error.response.data.message
+    } else if (typeof error.response.data === 'object' && error.response.data?.ok === false) {
+      message = error.response.data.message || 'Invalid coupon'
     } else if (error.message) {
       message = error.message
     }

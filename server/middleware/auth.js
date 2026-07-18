@@ -36,6 +36,24 @@ export async function protect(req, res, next) {
   }
 }
 
+/** Attach user when a valid token is present; otherwise continue as guest */
+export async function optionalProtect(req, _res, next) {
+  try {
+    const header = req.headers.authorization || ''
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null
+    if (!token) {
+      req.user = null
+      return next()
+    }
+    const decoded = jwt.verify(token, JWT_SECRET)
+    const user = await users.findById(decoded.id)
+    req.user = user && user.isActive ? user : null
+  } catch {
+    req.user = null
+  }
+  return next()
+}
+
 export function authorize(...allowedRoles) {
   const roles = allowedRoles.length ? allowedRoles : ROLES
   return (req, res, next) => {
