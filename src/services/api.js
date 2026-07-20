@@ -19,6 +19,9 @@ api.interceptors.request.use((config) => {
     )
   }
   config.baseURL = baseURL
+  config.headers = config.headers || {}
+  // localtunnel interstitial bypass when using *.loca.lt hosts
+  config.headers['Bypass-Tunnel-Reminder'] = 'true'
 
   const token =
     localStorage.getItem(STORAGE.TOKEN) || sessionStorage.getItem(STORAGE.TOKEN)
@@ -33,11 +36,12 @@ api.interceptors.response.use(
   (error) => {
     let message = 'Something went wrong'
     const status = error.response?.status
+    const apiHost = getApiBaseUrl()
     if (error.message && !error.response && error.message.includes('API URL is not configured')) {
       message = error.message
     } else if (!error.response) {
       message = onGithubPages
-        ? 'Cannot reach PahadLink API. Deploy the API and set runtime-config.json or VITE_API_URL.'
+        ? `Cannot reach PahadLink API (${apiHost || 'not set'}). Keep the API + tunnel running on your PC, or deploy the API on Render and update runtime-config.json.`
         : 'Cannot reach server. Start API with: npm run server'
     } else if (status === 502 || status === 503 || status === 504) {
       message = onGithubPages

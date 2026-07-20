@@ -1,5 +1,9 @@
 {
-  "apiUrl": "https://governing-irc-corps-nextel.trycloudflare.com/api",
+  "apiUrl": "https://pahadlink-api.loca.lt/api",
+  "apiUrls": [
+    "https://pahadlink-api.loca.lt/api",
+    "https://governing-irc-corps-nextel.trycloudflare.com/api"
+  ],
   "firebase": {
     "apiKey": "AIzaSyCa1V4GXz7fpGHQ_0gKNHkW5qQfVnWqeok",
     "authDomain": "pahadlink-56803.firebaseapp.com",

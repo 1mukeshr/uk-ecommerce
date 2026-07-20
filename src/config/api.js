@@ -33,6 +33,61 @@ const useViteApiProxy = () => {
   return isLocalOrLanHost(window.location.hostname)
 }
 
+function normalizeApiUrl(value) {
+  return String(value || '')
+    .trim()
+    .replace(/\/$/, '')
+}
+
+function collectApiCandidates(data) {
+  const list = []
+  const push = (value) => {
+    const url = normalizeApiUrl(value)
+    if (url && !list.includes(url)) list.push(url)
+  }
+  if (Array.isArray(data?.apiUrls)) {
+    data.apiUrls.forEach(push)
+  }
+  push(data?.apiUrl)
+  push(import.meta.env.VITE_API_URL)
+  return list
+}
+
+async function probeApiHealth(apiBase) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 12000)
+  try {
+    const res = await fetch(`${apiBase}/health?t=${Date.now()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      mode: 'cors',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'Bypass-Tunnel-Reminder': 'true',
+      },
+    })
+    if (!res.ok) return false
+    const data = await res.json().catch(() => null)
+    return Boolean(data?.ok || data?.service)
+  } catch {
+    return false
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+async function pickHealthyApiUrl(candidates) {
+  if (!candidates.length) return ''
+  for (const url of candidates) {
+    // Prefer first reachable host so Pages can fall back when a tunnel dies
+    // eslint-disable-next-line no-await-in-loop
+    if (await probeApiHealth(url)) return url
+  }
+  // Keep first configured URL so errors still show a concrete host
+  return candidates[0]
+}
+
 function pickFirebase(data) {
   if (!data || typeof data !== 'object') return null
   const src = data.firebase && typeof data.firebase === 'object' ? data.firebase : data
@@ -76,9 +131,8 @@ export async function loadRuntimeConfig() {
     const res = await fetch(`${url}?t=${Date.now()}`, { cache: 'no-store' })
     if (!res.ok) return
     const data = await res.json()
-    if (typeof data?.apiUrl === 'string' && data.apiUrl.trim()) {
-      runtimeApiUrl = data.apiUrl.trim().replace(/\/$/, '')
-    }
+    const candidates = collectApiCandidates(data)
+    runtimeApiUrl = await pickHealthyApiUrl(candidates)
     setRuntimeFirebaseConfig(pickFirebase(data))
   } catch {
     // optional file
@@ -91,7 +145,7 @@ function detectApiBase() {
   // Prefer runtime-config so Pages can switch API hosts without a rebuild
   if (runtimeApiUrl) return runtimeApiUrl
 
-  const fromEnv = (import.meta.env.VITE_API_URL || '').trim().replace(/\/$/, '')
+  const fromEnv = normalizeApiUrl(import.meta.env.VITE_API_URL)
   if (fromEnv) return fromEnv
 
   if (typeof window !== 'undefined' && /\.github\.io$/i.test(window.location.hostname)) {
@@ -108,6 +162,6 @@ export function getRuntimeFirebaseConfig() {
   return globalThis.__PAHADLINK_FIREBASE__ || null
 }
 
-export const API_BASE_URL = (
+export const API_BASE_URL = normalizeApiUrl(
   import.meta.env.VITE_API_URL || '/api'
-).replace(/\/$/, '')
+)
