@@ -30,6 +30,7 @@ const OrdersPage = lazy(() =>
 const AdminPage = lazy(() => import('../admin/AdminPage'))
 const SellerPage = lazy(() => import('../admin/SellerPage'))
 const Contact = lazy(() => import('../pages/Contact'))
+const About = lazy(() => import('../pages/About'))
 const PrivacyPage = lazy(() =>
   import('../pages/legal/LegalPage').then((m) => ({ default: m.PrivacyPage }))
 )
@@ -94,6 +95,7 @@ export default function AppRoutes() {
             }
           />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/about" element={<About />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/refunds" element={<RefundsPage />} />

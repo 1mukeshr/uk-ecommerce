@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getCatalogProduct } from './catalog.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, '../data')
@@ -21,9 +22,12 @@ const DEFAULTS = {
   'jhangora': { stock: 26 },
   singori: { stock: 20 },
   gangajal: { stock: 50 },
-  'rudraksha-mala': { stock: 3 },
   'festival-hamper': { stockBySize: { Standard: 9, Premium: 0 } },
   'organic-gift-box': { stockBySize: { 'Box of 4': 12, 'Box of 6': 2 } },
+}
+
+function isCatalogProduct(productId) {
+  return Boolean(getCatalogProduct(productId))
 }
 
 function ensureStore() {
@@ -51,17 +55,31 @@ function writeStore(data) {
 export function getStock(productId, size) {
   const store = readStore()
   const entry = store[productId] || DEFAULTS[productId]
-  if (!entry) return 999
+  if (!entry) return 0
   if (entry.stockBySize && size && Object.prototype.hasOwnProperty.call(entry.stockBySize, size)) {
     return Math.max(0, Number(entry.stockBySize[size]) || 0)
   }
   if (typeof entry.stock === 'number') return Math.max(0, entry.stock)
-  return 999
+  // Sized product without matching size → out of stock (do not invent 999)
+  if (entry.stockBySize) return 0
+  return 0
 }
 
 export function getInventorySnapshot() {
   const store = readStore()
-  const ids = new Set([...Object.keys(DEFAULTS), ...Object.keys(store)])
+  // Drop removed products that may linger in inventory.json / old DEFAULTS
+  let dirty = false
+  for (const id of Object.keys(store)) {
+    if (!isCatalogProduct(id)) {
+      delete store[id]
+      dirty = true
+    }
+  }
+  if (dirty) writeStore(store)
+
+  const ids = new Set(
+    [...Object.keys(DEFAULTS), ...Object.keys(store)].filter(isCatalogProduct),
+  )
   const items = []
   for (const id of ids) {
     const entry = store[id] || DEFAULTS[id] || { stock: 0 }
@@ -91,7 +109,11 @@ export function decrementStock(items) {
     if (!productId) continue
     const qty = Math.max(1, Number(item.quantity) || 1)
     const size = item.size ? String(item.size) : ''
-    const entry = store[productId] || structuredClone(DEFAULTS[productId] || { stock: 24 })
+    const entry = store[productId] || structuredClone(DEFAULTS[productId])
+    if (!entry) {
+      shortages.push({ productId, size: size || null, need: qty, available: 0 })
+      continue
+    }
 
     if (entry.stockBySize && size && Object.prototype.hasOwnProperty.call(entry.stockBySize, size)) {
       const available = Math.max(0, Number(entry.stockBySize[size]) || 0)
@@ -106,6 +128,9 @@ export function decrementStock(items) {
         continue
       }
       entry.stock -= qty
+    } else {
+      shortages.push({ productId, size: size || null, need: qty, available: 0 })
+      continue
     }
 
     store[productId] = entry

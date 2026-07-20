@@ -9,6 +9,7 @@ import orderRoutes from './routes/orders.js'
 import couponRoutes from './routes/coupons.js'
 import crmRoutes from './routes/crm.js'
 import contactRoutes from './routes/contact.js'
+import reviewRoutes from './routes/reviews.js'
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -20,6 +21,19 @@ const allowedOrigins = (process.env.FRONTEND_URL || '')
   .map((s) => s.trim())
   .filter(Boolean)
 
+function isPrivateLanHostname(hostname = '') {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1') {
+    return true
+  }
+  if (host.endsWith('.local')) return true
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  return false
+}
+
 function isAllowedOrigin(origin) {
   if (!origin) return true
   if (allowedOrigins.length === 0) return true
@@ -27,6 +41,18 @@ function isAllowedOrigin(origin) {
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true
   // GitHub Pages project + user sites
   if (/^https:\/\/[\w-]+\.github\.io$/i.test(origin)) return true
+  // Phones / other PCs on the same Wi‑Fi (http://192.168.x.x:5173, etc.)
+  try {
+    const { hostname, protocol } = new URL(origin)
+    if (
+      (protocol === 'http:' || protocol === 'https:') &&
+      isPrivateLanHostname(hostname)
+    ) {
+      return true
+    }
+  } catch {
+    // ignore invalid Origin
+  }
   return false
 }
 
@@ -44,11 +70,15 @@ app.use(express.json({ limit: '1mb' }))
 function healthPayload() {
   const dbState = mongoose.connection.readyState
   const usingFile = fileUserStore.enabled
+  const mongoOk = dbState === 1
+  // Orders/CRM need Mongo. File-store auth alone is not a healthy full API.
   return {
-    ok: dbState === 1 || usingFile,
+    ok: mongoOk,
     service: 'pahadlink-api',
-    database: usingFile ? 'file-store' : 'Pahadi_link',
-    mongo: dbState === 1 ? 'connected' : usingFile ? 'file-fallback' : 'disconnected',
+    database: mongoOk ? 'Pahadi_link' : usingFile ? 'file-store' : 'unavailable',
+    mongo: mongoOk ? 'connected' : usingFile ? 'file-fallback' : 'disconnected',
+    ordersReady: mongoOk,
+    authReady: mongoOk || usingFile,
     time: new Date().toISOString(),
   }
 }
@@ -67,6 +97,7 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/coupons', couponRoutes)
 app.use('/api/crm', crmRoutes)
 app.use('/api/contact', contactRoutes)
+app.use('/api/reviews', reviewRoutes)
 
 app.use((err, _req, res, _next) => {
   console.error(err)
@@ -80,8 +111,9 @@ async function start() {
   try {
     await connectDB()
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`API running on port ${PORT}`)
-      console.log('Database: Pahadi_link (users, orders, crmleads)')
+      console.log(`API listening on http://0.0.0.0:${PORT} (all interfaces)`)
+      console.log(`  Local:   http://127.0.0.1:${PORT}`)
+      console.log('Database: Pahadi_link (users, orders, crmleads, reviews)')
     })
   } catch (error) {
     console.error('Failed to start server:', error.message)

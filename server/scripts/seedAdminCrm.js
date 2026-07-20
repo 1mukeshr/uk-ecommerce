@@ -15,45 +15,43 @@ async function seed() {
 
   const orderCount = await Order.countDocuments()
   if (orderCount === 0) {
-    await Order.create([
-      {
-        orderNumber: buildOrderNumber(),
-        user: admin._id,
-        customerName: 'Priya Sharma',
-        customerEmail: 'priya@example.com',
-        customerPhone: '9876543210',
-        items: [
-          { name: 'Raw Honey 500g', quantity: 2, price: 399 },
-          { name: 'Pahadi Rajma 1kg', quantity: 1, price: 249 },
-        ],
-        totalAmount: 1047,
-        status: 'confirmed',
-        paymentStatus: 'paid',
-        shippingAddress: {
-          line1: 'Mall Road',
-          city: 'Dehradun',
-          state: 'Uttarakhand',
-          pincode: '248001',
-        },
-        notes: 'Sample order',
+    await Order.create({
+      orderNumber: await buildOrderNumber(),
+      user: admin._id,
+      customerName: 'Priya Sharma',
+      customerEmail: 'priya@example.com',
+      customerPhone: '9876543210',
+      items: [
+        { name: 'Raw Honey 500g', quantity: 2, price: 399 },
+        { name: 'Pahadi Rajma 1kg', quantity: 1, price: 249 },
+      ],
+      totalAmount: 1047,
+      status: 'confirmed',
+      paymentStatus: 'paid',
+      shippingAddress: {
+        line1: 'Mall Road',
+        city: 'Dehradun',
+        state: 'Uttarakhand',
+        pincode: '248001',
       },
-      {
-        orderNumber: buildOrderNumber(),
-        customerName: 'Rahul Negi',
-        customerEmail: 'rahul@example.com',
-        customerPhone: '9123456780',
-        items: [{ name: 'Woolen Shawl', quantity: 1, price: 1299 }],
-        totalAmount: 1299,
-        status: 'pending',
-        paymentStatus: 'pending',
-        shippingAddress: {
-          line1: 'Tallital',
-          city: 'Nainital',
-          state: 'Uttarakhand',
-          pincode: '263001',
-        },
+      notes: 'Sample order',
+    })
+    await Order.create({
+      orderNumber: await buildOrderNumber(),
+      customerName: 'Rahul Negi',
+      customerEmail: 'rahul@example.com',
+      customerPhone: '9123456780',
+      items: [{ name: 'Woolen Shawl', quantity: 1, price: 1299 }],
+      totalAmount: 1299,
+      status: 'pending',
+      paymentStatus: 'pending',
+      shippingAddress: {
+        line1: 'Tallital',
+        city: 'Nainital',
+        state: 'Uttarakhand',
+        pincode: '263001',
       },
-    ])
+    })
     console.log('Sample orders created')
   } else {
     console.log(`Orders already exist (${orderCount})`)

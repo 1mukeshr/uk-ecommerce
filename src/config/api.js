@@ -3,7 +3,7 @@ import { setRuntimeFirebaseConfig } from '../lib/firebase'
 /**
  * Resolve API base URL + optional Firebase web config for browser calls.
  * Priority:
- * - localhost → /api (Vite proxy); Firebase from VITE_* env
+ * - Vite DEV / localhost / LAN IP → /api (Vite proxy)
  * - runtime-config.json (GitHub Pages; can update without rebuild)
  * - VITE_* (build-time)
  *
@@ -12,9 +12,25 @@ import { setRuntimeFirebaseConfig } from '../lib/firebase'
  */
 let runtimeApiUrl = ''
 
-const isLocalHost = () => {
+/** localhost, loopback, RFC1918 LAN, and *.local */
+export function isLocalOrLanHost(hostname = '') {
+  const host = String(hostname || '').trim().toLowerCase()
+  if (!host) return false
+  if (host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1') {
+    return true
+  }
+  if (host.endsWith('.local')) return true
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true
+  return false
+}
+
+const useViteApiProxy = () => {
   if (typeof window === 'undefined') return false
-  return /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname)
+  // Always use relative /api during `vite` on this machine or LAN
+  if (import.meta.env.DEV) return true
+  return isLocalOrLanHost(window.location.hostname)
 }
 
 function pickFirebase(data) {
@@ -48,8 +64,8 @@ function pickFirebase(data) {
 
 export async function loadRuntimeConfig() {
   if (typeof window === 'undefined') return
-  // Local Vite always uses the proxy - skip remote runtime URLs
-  if (isLocalHost()) {
+  // Local / LAN Vite always uses the proxy - skip remote runtime URLs
+  if (useViteApiProxy()) {
     runtimeApiUrl = ''
     setRuntimeFirebaseConfig(null)
     return
@@ -70,7 +86,7 @@ export async function loadRuntimeConfig() {
 }
 
 function detectApiBase() {
-  if (isLocalHost()) return '/api'
+  if (useViteApiProxy()) return '/api'
 
   // Prefer runtime-config so Pages can switch API hosts without a rebuild
   if (runtimeApiUrl) return runtimeApiUrl

@@ -14,32 +14,35 @@ import {
 import { ROUTES, ROLES } from '../../config'
 import { useAuth } from '../../context/AuthContext'
 import { resolveProductImage } from '../../data/siteData'
-import { getOrdersForUser, saveOrder } from '../../utils/ordersStorage'
+import { getOrdersForUser, saveOrder, syncOrdersForUser } from '../../utils/ordersStorage'
 import {
   fetchMyOrders,
   mapApiOrderToUi,
   requestReturn,
   STATUS_LABELS,
+  DELIVERY_FLOW_STEPS,
+  DELIVERY_FLOW_INDEX,
+  deliveryHeadline,
+  deliveryHint,
+  paymentStatusLabel,
+  buildDeliveryActivity,
   submitReview,
 } from '../../services/orderService'
 
-const FLOW_STEPS = [
-  { key: 'pending', label: 'Placed' },
-  { key: 'confirmed', label: 'Confirmed' },
-  { key: 'shipped', label: 'Shipped' },
-  { key: 'delivered', label: 'Delivered' },
-]
-
-const FLOW_INDEX = {
-  pending: 0,
-  confirmed: 1,
-  processing: 1,
-  shipped: 2,
-  delivered: 3,
-  return_requested: 3,
-  returned: 3,
-  cancelled: -1,
+const statusClass = (status) => {
+  const key = String(status || 'pending').toLowerCase()
+  if (key.includes('deliver') && !key.includes('out')) return 'is-delivered'
+  if (key.includes('out_for') || key === 'out_for_delivery') return 'is-ofd'
+  if (key.includes('ship')) return 'is-shipped'
+  if (key.includes('cancel')) return 'is-cancelled'
+  if (key.includes('return')) return 'is-return'
+  if (key.includes('process') || key === 'processing') return 'is-packed'
+  if (key.includes('confirm')) return 'is-confirmed'
+  return 'is-placed'
 }
+
+const statusText = (order) =>
+  order?.statusLabel || STATUS_LABELS[order?.status] || order?.status || 'Order Placed'
 
 const initialsFrom = (name, email) => {
   const source = (name || email || 'P').trim()
@@ -74,19 +77,6 @@ const paymentLabel = (id) => {
   return 'Cash on delivery'
 }
 
-const statusClass = (status) => {
-  const key = String(status || 'pending').toLowerCase()
-  if (key.includes('deliver')) return 'is-delivered'
-  if (key.includes('ship')) return 'is-shipped'
-  if (key.includes('cancel')) return 'is-cancelled'
-  if (key.includes('return')) return 'is-return'
-  if (key.includes('process') || key.includes('confirm')) return 'is-confirmed'
-  return 'is-placed'
-}
-
-const statusText = (order) =>
-  order?.statusLabel || STATUS_LABELS[order?.status] || order?.status || 'Pending'
-
 const resolveItemImage = (item) => resolveProductImage(item)
 
 const itemsSubtotal = (items) =>
@@ -116,13 +106,21 @@ export const AccountPage = () => {
                 <span className="account-card__avatar" aria-hidden="true">
                   {initials}
                 </span>
-                <p className="account-card__kicker">Welcome back</p>
+                <p className="account-card__kicker">
+                  {isAdmin || isSeller ? 'Staff account' : 'Welcome back'}
+                </p>
                 <h1>{user?.name || 'My account'}</h1>
                 <p className="account-card__lead">
-                  Your PahadLink profile and shopping details in one place.
+                  {isAdmin
+                    ? 'Manage orders, inventory, and fulfilment from the admin desk.'
+                    : isSeller
+                      ? 'Process and ship orders from the seller desk.'
+                      : 'Your PahadLink profile and shopping details in one place.'}
                 </p>
                 {user?.role && user.role !== ROLES.CUSTOMER && (
-                  <p className="account-card__role">Role: {user.role}</p>
+                  <p className="account-card__role">
+                    Role: {user.role === 'admin' ? 'Admin' : 'Seller'}
+                  </p>
                 )}
               </div>
 
@@ -151,44 +149,72 @@ export const AccountPage = () => {
               </ul>
 
               <div className="account-card__quick">
-                <Link to={ROUTES.ORDERS} className="account-card__quick-link">
-                  <PackageIcon size={16} />
-                  <span>
-                    <strong>My orders</strong>
-                    <em>Track deliveries</em>
-                  </span>
-                </Link>
-                <Link to={ROUTES.SHOP} className="account-card__quick-link">
-                  <TruckIcon size={16} />
-                  <span>
-                    <strong>Shop</strong>
-                    <em>Browse products</em>
-                  </span>
-                </Link>
                 {isAdmin && (
                   <Link to={ROUTES.ADMIN} className="account-card__quick-link">
-                    <PackageIcon size={16} />
-                    <span>
+                    <span className="account-card__quick-icon" aria-hidden="true">
+                      <PackageIcon size={16} />
+                    </span>
+                    <span className="account-card__quick-copy">
                       <strong>Admin panel</strong>
                       <em>Orders & inventory</em>
                     </span>
+                    <ArrowRightIcon size={14} className="account-card__quick-chevron" />
                   </Link>
                 )}
-                {isSeller && (
+                {(isSeller || isAdmin) && (
                   <Link to={ROUTES.SELLER} className="account-card__quick-link">
-                    <TruckIcon size={16} />
-                    <span>
-                      <strong>Seller desk</strong>
+                    <span className="account-card__quick-icon" aria-hidden="true">
+                      <TruckIcon size={16} />
+                    </span>
+                    <span className="account-card__quick-copy">
+                      <strong>
+                        {isAdmin ? 'Fulfilment desk' : 'Seller desk'}
+                      </strong>
                       <em>Process & ship</em>
                     </span>
+                    <ArrowRightIcon size={14} className="account-card__quick-chevron" />
                   </Link>
+                )}
+                {!isAdmin && !isSeller && (
+                  <>
+                    <Link to={ROUTES.ORDERS} className="account-card__quick-link">
+                      <span className="account-card__quick-icon" aria-hidden="true">
+                        <PackageIcon size={16} />
+                      </span>
+                      <span className="account-card__quick-copy">
+                        <strong>My orders</strong>
+                        <em>Track deliveries</em>
+                      </span>
+                      <ArrowRightIcon size={14} className="account-card__quick-chevron" />
+                    </Link>
+                    <Link to={ROUTES.SHOP} className="account-card__quick-link">
+                      <span className="account-card__quick-icon" aria-hidden="true">
+                        <TruckIcon size={16} />
+                      </span>
+                      <span className="account-card__quick-copy">
+                        <strong>Shop</strong>
+                        <em>Browse products</em>
+                      </span>
+                      <ArrowRightIcon size={14} className="account-card__quick-chevron" />
+                    </Link>
+                  </>
                 )}
               </div>
 
               <div className="account-card__actions">
-                <Link to={ROUTES.ORDERS} className="btn-hero-primary">
-                  View my orders
-                </Link>
+                {isAdmin ? (
+                  <Link to={ROUTES.ADMIN} className="btn-hero-primary">
+                    Open admin panel
+                  </Link>
+                ) : isSeller ? (
+                  <Link to={ROUTES.SELLER} className="btn-hero-primary">
+                    Open seller desk
+                  </Link>
+                ) : (
+                  <Link to={ROUTES.ORDERS} className="btn-hero-primary">
+                    View my orders
+                  </Link>
+                )}
                 <button
                   type="button"
                   className="account-card__logout"
@@ -209,7 +235,7 @@ export const AccountPage = () => {
 
 export const OrdersPage = () => {
   const { user } = useAuth()
-  const [orders, setOrders] = useState(() => getOrdersForUser(user))
+  const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeOrderId, setActiveOrderId] = useState(null)
@@ -218,21 +244,29 @@ export const OrdersPage = () => {
   const [reviewComment, setReviewComment] = useState('')
   const [actionMsg, setActionMsg] = useState('')
   const [busy, setBusy] = useState(false)
+  const [syncedAt, setSyncedAt] = useState(null)
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true)
+  const loadOrders = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true)
     setError('')
     try {
       const apiOrders = await fetchMyOrders()
       setOrders(apiOrders)
-      apiOrders.forEach((order) => {
-        if (order?.id) saveOrder(order)
-      })
+      syncOrdersForUser(user, apiOrders)
+      setSyncedAt(new Date())
     } catch (err) {
-      setOrders(getOrdersForUser(user))
-      setError(err.message || 'Could not sync orders from server')
+      const cached = getOrdersForUser(user)
+      if (cached.length) {
+        setOrders(cached)
+        setError(
+          `${err.message || 'Could not sync'} · showing last saved on this device`
+        )
+      } else {
+        setOrders([])
+        setError(err.message || 'Could not load orders from server')
+      }
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [user])
 
@@ -240,9 +274,33 @@ export const OrdersPage = () => {
     loadOrders()
   }, [loadOrders])
 
+  // Keep fulfilment live while My orders is open
+  useEffect(() => {
+    const onFocus = () => loadOrders({ silent: true })
+    const onVis = () => {
+      if (document.visibilityState === 'visible') loadOrders({ silent: true })
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVis)
+    const poll = window.setInterval(() => loadOrders({ silent: true }), 20000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVis)
+      window.clearInterval(poll)
+    }
+  }, [loadOrders])
+
   const activeOrder = useMemo(
-    () => orders.find((order) => order.id === activeOrderId || order.apiId === activeOrderId) || null,
+    () =>
+      orders.find(
+        (order) => order.id === activeOrderId || order.apiId === activeOrderId
+      ) || null,
     [orders, activeOrderId]
+  )
+
+  const activity = useMemo(
+    () => (activeOrder ? buildDeliveryActivity(activeOrder) : []),
+    [activeOrder]
   )
 
   useEffect(() => {
@@ -344,13 +402,24 @@ export const OrdersPage = () => {
                     ? 'Syncing your orders…'
                     : orders.length === 0
                       ? 'Track deliveries and revisit past hill finds here.'
-                      : `${orders.length} order${orders.length === 1 ? '' : 's'} · live status from warehouse`}
+                      : `${orders.length} order${orders.length === 1 ? '' : 's'} · live PahadLink delivery status`}
                 </p>
+                {syncedAt && !loading && (
+                  <p className="orders-head__sync">
+                    Updated{' '}
+                    {syncedAt.toLocaleTimeString('en-IN', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </p>
+                )}
               </div>
-              <Link to={ROUTES.SHOP} className="orders-head__shop">
-                Continue shopping
-                <ArrowRightIcon size={15} />
-              </Link>
+              <div className="orders-head__actions">
+                <Link to={ROUTES.SHOP} className="orders-head__shop">
+                  Continue shopping
+                  <ArrowRightIcon size={15} />
+                </Link>
+              </div>
             </header>
 
             {error && (
@@ -521,36 +590,85 @@ export const OrdersPage = () => {
             </header>
 
             {activeOrder.status !== 'cancelled' && (
-              <ol
-                className="orders-detail-popup__steps"
-                aria-label="Order progress"
+              <section
+                className="orders-track"
+                aria-label="PahadLink delivery tracking"
               >
-                {FLOW_STEPS.map((step, idx) => {
-                  const current = FLOW_INDEX[activeOrder.status] ?? 0
-                  const done = current >= idx
-                  const active = current === idx
-                  return (
-                    <li
-                      key={step.key}
-                      className={`orders-detail-popup__step${
-                        done ? ' is-done' : ''
-                      }${active ? ' is-active' : ''}`}
-                    >
-                      <span className="orders-detail-popup__step-dot" />
-                      <span className="orders-detail-popup__step-label">
-                        {step.label}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ol>
+                <div className="orders-track__banner">
+                  <p className="orders-track__brand">PahadLink delivery</p>
+                  <strong className="orders-track__headline">
+                    {deliveryHeadline(activeOrder.status)}
+                  </strong>
+                  <em className="orders-track__hint">
+                    {deliveryHint(activeOrder.status)}
+                  </em>
+                </div>
+
+                <ol
+                  className="orders-detail-popup__steps orders-track__steps"
+                  aria-label="Order progress"
+                >
+                  {DELIVERY_FLOW_STEPS.map((step, idx) => {
+                    const current =
+                      DELIVERY_FLOW_INDEX[activeOrder.status] ?? 0
+                    const done = current > idx
+                    const active = current === idx
+                    return (
+                      <li
+                        key={step.key}
+                        className={`orders-detail-popup__step${
+                          done ? ' is-done' : ''
+                        }${active ? ' is-active' : ''}`}
+                        title={step.hint}
+                      >
+                        <span className="orders-detail-popup__step-dot" />
+                        <span className="orders-detail-popup__step-label">
+                          {step.label}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ol>
+
+                <ol className="orders-track__timeline" aria-label="Activity">
+                  {activity
+                    .slice()
+                    .reverse()
+                    .map((ev, idx) => (
+                      <li
+                        key={`${ev.status}-${ev.at || idx}`}
+                        className={idx === 0 ? 'is-latest' : ''}
+                      >
+                        <span className="orders-track__timeline-dot" />
+                        <div>
+                          <strong>
+                            {STATUS_LABELS[ev.status] || ev.note}
+                          </strong>
+                          <em>{ev.note}</em>
+                          <time dateTime={ev.at || undefined}>
+                            {formatDateTime(ev.at)}
+                          </time>
+                        </div>
+                      </li>
+                    ))}
+                </ol>
+              </section>
+            )}
+
+            {activeOrder.status === 'cancelled' && (
+              <div className="orders-track__banner is-cancelled">
+                <p className="orders-track__brand">PahadLink delivery</p>
+                <strong className="orders-track__headline">
+                  Order cancelled
+                </strong>
+              </div>
             )}
 
             {(activeOrder.trackingNumber || activeOrder.courier) && (
               <div className="orders-detail-popup__track-card">
                 <TruckIcon size={16} />
                 <div>
-                  <span>Shipment</span>
+                  <span>Shipment · PahadLink</span>
                   <strong>
                     {activeOrder.courier || 'Courier'}
                     {activeOrder.trackingNumber
@@ -597,11 +715,7 @@ export const OrdersPage = () => {
                 <div className="orders-detail-popup__info-card">
                   <span>Payment</span>
                   <strong>{paymentLabel(activeOrder.payment)}</strong>
-                  <em>
-                    {activeOrder.paymentStatus
-                      ? String(activeOrder.paymentStatus)
-                      : 'pending'}
-                  </em>
+                  <em>{paymentStatusLabel(activeOrder)}</em>
                 </div>
                 <div className="orders-detail-popup__info-card">
                   <span>Deliver to</span>
@@ -649,7 +763,12 @@ export const OrdersPage = () => {
                   </div>
                 )}
                 <div className="orders-detail-popup__total">
-                  <span>Total paid</span>
+                  <span>
+                    {activeOrder.paymentStatus === 'paid' ||
+                    activeOrder.status === 'delivered'
+                      ? 'Total paid'
+                      : 'Order total'}
+                  </span>
                   <strong>{formatPrice(activeOrder.total)}</strong>
                 </div>
               </div>

@@ -14,9 +14,25 @@ export default defineConfig(({ command }) => ({
     modulePreload: { polyfill: true },
   },
   server: {
+    // Bind all NICs so any LAN/Wi‑Fi client can open http://<this-pc-ip>:5173
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 4173,
+    strictPort: false,
+    // Same /api proxy as dev so `npm run preview` works with local API
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:5000',
         changeOrigin: true,
       },
     },

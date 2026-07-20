@@ -12,18 +12,30 @@ import {
   CodIcon,
   UpiIcon,
   CardPayIcon,
+  ChevronDownIcon,
 } from '../../components/icons'
-import { ROUTES, STORAGE, productPath } from '../../config'
+import { ROUTES, STORAGE, productPath, MAX_QTY_PER_ITEM_PER_CUSTOMER } from '../../config'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { saveOrder } from '../../utils/ordersStorage'
-import { createOrder, validateCoupon } from '../../services/orderService'
 import {
+  createOrder,
+  validateCoupon,
+  mapApiOrderToUi,
+  fetchMyOrders,
+} from '../../services/orderService'
+import {
+  ADDRESSES_EVENT,
   INDIA_STATES,
   LOCATION_EVENT,
+  getPreferredDeliveryAddress,
+  hasCompleteShippingAddress,
+  listAddresses,
   locationToCheckoutFields,
   matchState,
   readLocation,
+  requestOpenAddressPicker,
+  selectAddress,
   upsertAddress,
 } from '../../utils/locationStorage'
 import {
@@ -38,17 +50,35 @@ const ORDER_POPUP_MS = 20000
 const STATES = INDIA_STATES
 
 const PAYMENTS = [
-  { id: 'cod', title: 'COD', desc: 'Pay on delivery', Icon: CodIcon },
-  { id: 'upi', title: 'UPI', desc: 'GPay, PhonePe…', Icon: UpiIcon },
-  { id: 'card', title: 'Card', desc: 'Credit / debit', Icon: CardPayIcon },
+  {
+    id: 'upi',
+    title: 'UPI',
+    short: 'Pay by any UPI app',
+    desc: 'Google Pay, PhonePe, Paytm and more.',
+    Icon: UpiIcon,
+    body: 'You will complete payment in your UPI app after placing the order. Order confirms once payment succeeds.',
+  },
+  {
+    id: 'card',
+    title: 'Credit / Debit / ATM Card',
+    short: 'Add and secure cards as per RBI guidelines',
+    desc: 'Visa, Mastercard, RuPay and more.',
+    Icon: CardPayIcon,
+    body: 'Pay securely with your card. Card details are never stored on PahadLink.',
+  },
+  {
+    id: 'cod',
+    title: 'Cash on Delivery',
+    short: 'Pay when your order arrives',
+    desc: 'Available for most pincodes.',
+    Icon: CodIcon,
+    body: 'Pay cash (or UPI) to the delivery partner when your order reaches you. Keep exact change if possible.',
+  },
 ]
 
 const formatPrice = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`
 
-const makeOrderId = () => {
-  const t = Date.now().toString().slice(-8)
-  return `PL${t}`
-}
+const makeOrderId = () => `PAHADLINK-TEMP-${Date.now().toString().slice(-6)}`
 
 const readJson = (key) => {
   try {
@@ -63,7 +93,8 @@ const parseLocation = (location) => locationToCheckoutFields(location)
 
 const buildInitialForm = (user) => {
   const saved = readJson(STORAGE.CHECKOUT_ADDRESS) || {}
-  const fromLoc = parseLocation(readLocation())
+  const preferred = getPreferredDeliveryAddress()
+  const fromLoc = parseLocation(preferred)
   const state =
     fromLoc.state && STATES.includes(fromLoc.state)
       ? fromLoc.state
@@ -74,7 +105,7 @@ const buildInitialForm = (user) => {
   return {
     name: user?.name || fromLoc.name || saved.name || '',
     email: user?.email || saved.email || '',
-    phone: fromLoc.phone || saved.phone || '',
+    phone: user?.phone || fromLoc.phone || saved.phone || '',
     address: fromLoc.address || saved.address || '',
     landmark: fromLoc.landmark || saved.landmark || '',
     city: fromLoc.city || saved.city || '',
@@ -83,6 +114,38 @@ const buildInitialForm = (user) => {
     notes: '',
     addressId: fromLoc.addressId || '',
     tag: fromLoc.tag || 'Home',
+  }
+}
+
+/** Merge location/user into checkout form — fill blanks; keep typed values */
+const mergeAddressIntoForm = (prev, fields, user) => ({
+  ...prev,
+  name: prev.name || user?.name || fields.name || '',
+  email: prev.email || user?.email || '',
+  phone: prev.phone || fields.phone || user?.phone || '',
+  address: prev.address || fields.address || '',
+  landmark: prev.landmark || fields.landmark || '',
+  city: prev.city || fields.city || '',
+  state: prev.state || matchState(fields.state) || 'Uttarakhand',
+  pincode: prev.pincode || fields.pincode || '',
+  addressId: prev.addressId || fields.addressId || '',
+  tag: prev.tag || fields.tag || 'Home',
+})
+
+const applyAddressToForm = (prev, fields, user, { force = false } = {}) => {
+  if (!force) return mergeAddressIntoForm(prev, fields, user)
+  return {
+    ...prev,
+    name: fields.name || user?.name || prev.name,
+    email: user?.email || prev.email,
+    phone: fields.phone || user?.phone || prev.phone,
+    address: fields.address || '',
+    landmark: fields.landmark || '',
+    city: fields.city || '',
+    state: matchState(fields.state) || prev.state || 'Uttarakhand',
+    pincode: fields.pincode || '',
+    addressId: fields.addressId || '',
+    tag: fields.tag || 'Home',
   }
 }
 
@@ -109,7 +172,7 @@ const persistAddress = (form) => {
         name: form.name.trim(),
         phone: form.phone.trim(),
         line1: form.address.trim(),
-        area: form.landmark.trim(),
+        landmark: form.landmark.trim(),
         city: form.city.trim(),
         state: form.state,
         pin: form.pincode.trim(),
@@ -134,10 +197,12 @@ const Checkout = () => {
     clearCart,
     closeCart,
     openCart,
+    getCartQtyForProduct,
   } = useShop()
 
   const [form, setForm] = useState(() => buildInitialForm(user))
-  const [payment, setPayment] = useState('cod')
+  const [savedAddresses, setSavedAddresses] = useState(() => listAddresses())
+  const [payment, setPayment] = useState('')
   const [errors, setErrors] = useState({})
   const [placing, setPlacing] = useState(false)
   const [order, setOrder] = useState(null)
@@ -148,30 +213,83 @@ const Checkout = () => {
   const [couponError, setCouponError] = useState('')
   const [couponLoading, setCouponLoading] = useState(false)
 
-  // Live-sync header location → checkout fields
+  const refreshSavedAddresses = useCallback(() => {
+    setSavedAddresses(listAddresses())
+  }, [])
+
+  // After login → checkout: fill name/email + preferred delivery address
   useEffect(() => {
-    const applyLocation = (detail) => {
-      const fields = locationToCheckoutFields(detail || readLocation())
+    if (!user) return
+    const preferred = getPreferredDeliveryAddress()
+    const fields = locationToCheckoutFields(preferred)
+    setForm((prev) => {
+      const needsAddress = !prev.address || !prev.city || !prev.pincode
+      return applyAddressToForm(prev, fields, user, {
+        force: needsAddress && Boolean(fields.address || fields.city || fields.pincode),
+      })
+    })
+    refreshSavedAddresses()
+  }, [user?.id, user?.email, user?.name, user?.phone, refreshSavedAddresses])
+
+  // Returning customer: fill gaps from last delivered/shipped order address
+  useEffect(() => {
+    if (!user) return undefined
+    let cancelled = false
+    ;(async () => {
+      try {
+        const orders = await fetchMyOrders()
+        if (cancelled || !orders?.length) return
+        const last = orders.find(
+          (o) => o.address || o.city || o.pincode
+        )
+        if (!last) return
+        setForm((prev) => {
+          if (prev.address && prev.city && prev.pincode) return prev
+          return {
+            ...prev,
+            name: prev.name || last.name || user.name || '',
+            phone: prev.phone || last.phone || user.phone || '',
+            email: prev.email || last.email || user.email || '',
+            address: prev.address || last.address || '',
+            city: prev.city || last.city || '',
+            state: matchState(prev.state || last.state) || prev.state,
+            pincode: prev.pincode || last.pincode || '',
+          }
+        })
+      } catch {
+        /* offline — keep local address book */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  // Live-sync header location / address book → checkout fields
+  useEffect(() => {
+    const applyLocation = (detail, { force = false } = {}) => {
+      const fields = locationToCheckoutFields(
+        detail || getPreferredDeliveryAddress()
+      )
       if (!fields.address && !fields.city && !fields.pincode) return
-      setForm((prev) => ({
-        ...prev,
-        address: fields.address || prev.address,
-        landmark: fields.landmark || prev.landmark,
-        city: fields.city || prev.city,
-        state: matchState(fields.state) || prev.state,
-        pincode: fields.pincode || prev.pincode,
-        name: fields.name || prev.name,
-        phone: fields.phone || prev.phone,
-        addressId: fields.addressId || prev.addressId,
-        tag: fields.tag || prev.tag,
-      }))
+      setForm((prev) => applyAddressToForm(prev, fields, user, { force }))
+      refreshSavedAddresses()
     }
 
-    const onCustom = (e) => applyLocation(e.detail)
+    const onCustom = (e) => applyLocation(e.detail, { force: true })
+    const onAddresses = () => {
+      refreshSavedAddresses()
+      applyLocation(readLocation(), { force: false })
+    }
     const onStorage = (e) => {
-      if (e.key === STORAGE.LOCATION) {
+      if (e.key === STORAGE.LOCATION || e.key === STORAGE.ADDRESSES) {
         try {
-          applyLocation(e.newValue ? JSON.parse(e.newValue) : null)
+          applyLocation(
+            e.key === STORAGE.LOCATION && e.newValue
+              ? JSON.parse(e.newValue)
+              : readLocation(),
+            { force: e.key === STORAGE.LOCATION }
+          )
         } catch {
           /* ignore */
         }
@@ -179,12 +297,29 @@ const Checkout = () => {
     }
 
     window.addEventListener(LOCATION_EVENT, onCustom)
+    window.addEventListener(ADDRESSES_EVENT, onAddresses)
     window.addEventListener('storage', onStorage)
     return () => {
       window.removeEventListener(LOCATION_EVENT, onCustom)
+      window.removeEventListener(ADDRESSES_EVENT, onAddresses)
       window.removeEventListener('storage', onStorage)
     }
-  }, [])
+  }, [user, refreshSavedAddresses])
+
+  const pickSavedAddress = (addr) => {
+    const selected = selectAddress(addr)
+    const fields = locationToCheckoutFields(selected || addr)
+    setForm((prev) => applyAddressToForm(prev, fields, user, { force: true }))
+    setErrors((prev) => {
+      const next = { ...prev }
+      delete next.address
+      delete next.city
+      delete next.pincode
+      delete next.phone
+      return next
+    })
+    refreshSavedAddresses()
+  }
 
   const dismissOrderPopup = useCallback(() => {
     setOrder(null)
@@ -211,11 +346,40 @@ const Checkout = () => {
     }
   }, [order, dismissOrderPopup])
 
+  // Address must be complete before checkout — otherwise back to Home
+  useEffect(() => {
+    if (order) return
+    if (hasCompleteShippingAddress()) return
+    navigate(ROUTES.HOME, { replace: true })
+    requestOpenAddressPicker({
+      message: 'Add a complete address, then open your bag to checkout.',
+    })
+  }, [navigate, order])
+
   const shipping = calcShipping(cartTotal)
   const discount = appliedCoupon?.discount || 0
   const payable = Math.max(0, cartTotal - discount + shipping)
   const shipLeft = Math.max(0, FREE_SHIP_AT - cartTotal)
   const shipProgress = Math.min(100, Math.round((cartTotal / FREE_SHIP_AT) * 100))
+
+  const formReady = useMemo(() => {
+    const phoneOk = /^[6-9]\d{9}$/.test(form.phone.replace(/\s/g, ''))
+    const emailOk = /^\S+@\S+\.\S+$/.test(form.email.trim())
+    const addressOk = form.address.trim().length >= 8
+    const pinOk = /^\d{6}$/.test(form.pincode.trim())
+    return (
+      Boolean(form.name.trim()) &&
+      emailOk &&
+      phoneOk &&
+      addressOk &&
+      Boolean(form.city.trim()) &&
+      Boolean(form.state) &&
+      pinOk
+    )
+  }, [form])
+
+  const canPlaceOrder =
+    Boolean(cart.length) && formReady && Boolean(payment) && !placing
 
   useEffect(() => {
     if (!appliedCoupon?.code) return
@@ -257,15 +421,22 @@ const Checkout = () => {
       setCouponInput(result.code || code)
       setCouponError('')
     } catch (err) {
-      // Offline / API down — still allow local preview for known codes
-      const local = applyCoupon(cartTotal, code, { isFirstOrder: true })
-      if (local.ok && /API|server|reach/i.test(err.message || '')) {
+      // Offline: only preview non–first-order coupons (server owns first-order checks)
+      const local = applyCoupon(cartTotal, code, { isFirstOrder: false })
+      if (
+        local.ok &&
+        /API|server|reach/i.test(err.message || '')
+      ) {
         setAppliedCoupon(local)
         setCouponInput(local.code)
         setCouponError('')
       } else {
         setAppliedCoupon(null)
-        setCouponError(err.message || local.message || 'Invalid coupon')
+        setCouponError(
+          err.message ||
+            local.message ||
+            'Could not validate coupon — check connection and try again'
+        )
       }
     } finally {
       setCouponLoading(false)
@@ -307,13 +478,16 @@ const Checkout = () => {
     if (!/^\d{6}$/.test(form.pincode.trim())) {
       next.pincode = 'Enter a 6-digit pincode'
     }
+    if (!payment || !PAYMENTS.some((p) => p.id === payment)) {
+      next.payment = 'Select a payment method'
+    }
     setErrors(next)
     return Object.keys(next).length === 0
   }
 
   const placeOrder = async (e) => {
     e?.preventDefault?.()
-    if (!cart.length || !validate() || placing) return
+    if (!canPlaceOrder || !validate()) return
 
     setPlacing(true)
     setPlaceError('')
@@ -375,35 +549,29 @@ const Checkout = () => {
         })),
       })
 
-      if (apiOrder?.orderNumber) {
-        placed.id = apiOrder.orderNumber
-        placed.paymentStatus = apiOrder.paymentStatus
-        placed.status = apiOrder.status || placed.status
-        placed.apiId = apiOrder.id
-        if (typeof apiOrder.totalAmount === 'number') {
-          placed.total = apiOrder.totalAmount
-        }
-        if (typeof apiOrder.shippingFee === 'number') {
-          placed.shipping = apiOrder.shippingFee
-        }
-        if (typeof apiOrder.discountAmount === 'number') {
-          placed.discount = apiOrder.discountAmount
-        }
-        if (apiOrder.couponCode) {
-          placed.couponCode = apiOrder.couponCode
+      let saved = placed
+      if (apiOrder?.orderNumber || apiOrder?.id) {
+        saved = {
+          ...mapApiOrderToUi(apiOrder),
+          // Keep cart images when API has no image URLs
+          items: (mapApiOrderToUi(apiOrder).items || []).map((item, i) => ({
+            ...item,
+            image: item.image || placed.items[i]?.image || '',
+          })),
         }
       }
 
       persistAddress(form)
-      saveOrder(placed)
+      saveOrder(saved)
       setOrder({
-        id: placed.id,
-        payment: placed.payment,
-        total: placed.total,
-        shipping: placed.shipping,
-        items: placed.itemCount,
-        email: placed.email,
-        paymentStatus: placed.paymentStatus,
+        id: saved.id,
+        payment: saved.payment,
+        total: saved.total,
+        shipping: saved.shipping,
+        items: saved.itemCount,
+        email: saved.email,
+        paymentStatus: saved.paymentStatus,
+        status: saved.status,
       })
       clearCart()
       closeCart()
@@ -656,8 +824,10 @@ const Checkout = () => {
                                 type="button"
                                 aria-label="Increase quantity"
                                 disabled={
-                                  typeof item.maxStock === 'number' &&
-                                  item.qty >= item.maxStock
+                                  (getCartQtyForProduct?.(item.id) || 0) >=
+                                    MAX_QTY_PER_ITEM_PER_CUSTOMER ||
+                                  (typeof item.maxStock === 'number' &&
+                                    item.qty >= item.maxStock)
                                 }
                                 onClick={() =>
                                   updateCartQty(item.key, item.qty + 1)
@@ -690,6 +860,48 @@ const Checkout = () => {
                     <div className="checkout-card__head">
                       <h2>Delivery address</h2>
                     </div>
+
+                    {savedAddresses.length > 0 && (
+                      <div
+                        className="checkout-saved"
+                        role="listbox"
+                        aria-label="Saved delivery addresses"
+                      >
+                        <p className="checkout-saved__label">
+                          Use a saved address
+                        </p>
+                        <ul className="checkout-saved__list">
+                          {savedAddresses.map((addr) => {
+                            const active = form.addressId === addr.id
+                            return (
+                              <li key={addr.id}>
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected={active}
+                                  className={`checkout-saved__card${
+                                    active ? ' is-active' : ''
+                                  }`}
+                                  onClick={() => pickSavedAddress(addr)}
+                                >
+                                  <em className="checkout-saved__tag">
+                                    {addr.tag || 'Home'}
+                                  </em>
+                                  <strong>
+                                    {addr.line1 || addr.fullAddress || 'Address'}
+                                  </strong>
+                                  <span>
+                                    {[addr.city, addr.state, addr.pin]
+                                      .filter(Boolean)
+                                      .join(', ')}
+                                  </span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
 
                     <div className="checkout-fields checkout-fields--2">
                       <label className="checkout-field">
@@ -907,45 +1119,91 @@ const Checkout = () => {
                   </section>
 
                   <section className="checkout-summary__pay">
-                    <h2>Payment mode</h2>
+                    <h2>Payment Options</h2>
                     <div
                       className="checkout-pay-mode"
                       role="radiogroup"
                       aria-label="Payment method"
+                      aria-required="true"
                     >
                       {PAYMENTS.map((option) => {
                         const PayIcon = option.Icon
                         const active = payment === option.id
                         return (
-                          <label
+                          <div
                             key={option.id}
-                            className={`checkout-pay-mode__opt${
-                              active ? ' is-active' : ''
+                            className={`checkout-pay-mode__item${
+                              active ? ' is-open' : ''
                             }`}
                           >
-                            <input
-                              type="radio"
-                              name="payment"
-                              value={option.id}
-                              checked={active}
-                              onChange={() => setPayment(option.id)}
-                            />
-                            <span className="checkout-pay-mode__icon" aria-hidden="true">
-                              <PayIcon size={20} />
-                            </span>
-                            <span className="checkout-pay-mode__text">
-                              <strong>{option.title}</strong>
-                              <em>{option.desc}</em>
-                            </span>
-                            {active && (
-                              <span className="checkout-pay-mode__tick" aria-hidden="true">
-                                <CheckCircleIcon size={16} />
+                            <label className="checkout-pay-mode__opt">
+                              <input
+                                type="radio"
+                                name="payment"
+                                value={option.id}
+                                checked={active}
+                                onChange={() => {
+                                  setPayment(option.id)
+                                  setErrors((prev) => {
+                                    if (!prev.payment) return prev
+                                    const next = { ...prev }
+                                    delete next.payment
+                                    return next
+                                  })
+                                }}
+                              />
+                              <span
+                                className="checkout-pay-mode__radio"
+                                aria-hidden="true"
+                              />
+                              <span
+                                className="checkout-pay-mode__icon"
+                                aria-hidden="true"
+                              >
+                                <PayIcon size={22} />
                               </span>
-                            )}
-                          </label>
+                              <span className="checkout-pay-mode__text">
+                                <strong>{option.title}</strong>
+                                <em>{option.short}</em>
+                              </span>
+                              <ChevronDownIcon
+                                size={16}
+                                className="checkout-pay-mode__chevron"
+                              />
+                            </label>
+
+                            <div
+                              className="checkout-pay-mode__panel"
+                              id={`pay-panel-${option.id}`}
+                              role="region"
+                              aria-hidden={!active}
+                            >
+                              <div className="checkout-pay-mode__panel-inner">
+                                <p>{option.body}</p>
+                                <span className="checkout-pay-mode__hint">
+                                  {option.desc}
+                                </span>
+                                {option.id === 'cod' ? (
+                                  <span className="checkout-pay-mode__badge">
+                                    No online payment needed
+                                  </span>
+                                ) : (
+                                  <span className="checkout-pay-mode__badge checkout-pay-mode__badge--secure">
+                                    <ShieldIcon size={12} />
+                                    Secure payment
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         )
                       })}
                     </div>
+                    {errors.payment ? (
+                      <p className="checkout-error" role="alert">
+                        {errors.payment}
+                      </p>
+                    ) : null}
                   </section>
 
                   <section className="checkout-summary__price">
@@ -987,7 +1245,7 @@ const Checkout = () => {
                     type="submit"
                     form="checkout-form"
                     className="checkout-summary__cta"
-                    disabled={placing}
+                    disabled={!canPlaceOrder}
                   >
                     {placing
                       ? 'Placing order…'
@@ -995,8 +1253,10 @@ const Checkout = () => {
                   </button>
                   <p className="checkout-summary__secure">
                     <ShieldIcon size={13} />
-                    PahadLink secure checkout ·{' '}
-                    {PAYMENTS.find((p) => p.id === payment)?.title || 'Pay'}
+                    PahadLink secure checkout
+                    {payment
+                      ? ` · ${PAYMENTS.find((p) => p.id === payment)?.title || 'Pay'}`
+                      : ' · Select payment to continue'}
                   </p>
                 </div>
               </aside>
@@ -1009,7 +1269,7 @@ const Checkout = () => {
             <span>Total</span>
             <strong>{formatPrice(payable)}</strong>
           </div>
-          <button type="button" disabled={placing} onClick={placeOrder}>
+          <button type="button" disabled={!canPlaceOrder} onClick={placeOrder}>
             {placing ? 'Placing…' : 'Place order'}
           </button>
         </div>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { StarRating, HeartIcon, CheckCircleIcon } from '../icons'
 import { useShop } from '../../context/ShopContext'
-import { productPath } from '../../config'
+import { productPath, MAX_QTY_PER_ITEM_PER_CUSTOMER } from '../../config'
 import {
   getProductVariants,
   getStockStatus,
@@ -38,14 +38,18 @@ const ProductCard = ({ product, preferredSize }) => {
   const [qty, setQty] = useState(1)
   const [justAdded, setJustAdded] = useState(false)
   const addedTimer = useRef(null)
-  const { addToCart, toggleWishlist, isInWishlist, getCartQtyForVariant } =
+  const { addToCart, toggleWishlist, isInWishlist, getCartQtyForVariant, getCartQtyForProduct } =
     useShop()
 
   const selected = getVariantBySize(product, size)
   const stockInfo = getStockStatus(product, selected.size)
   const inCartQty = getCartQtyForVariant?.(product.id, selected.size) || 0
-  const maxQty = Math.max(0, stockInfo.stock - inCartQty)
+  const inCartProduct = getCartQtyForProduct?.(product.id) || 0
+  const customerRoom = Math.max(0, MAX_QTY_PER_ITEM_PER_CUSTOMER - inCartProduct)
+  const stockRoom = Math.max(0, stockInfo.stock - inCartQty)
+  const maxQty = Math.min(customerRoom, stockRoom)
   const canAdd = stockInfo.inStock && maxQty > 0
+  const atCustomerLimit = customerRoom <= 0
   const off = discountPct(selected.price, selected.compareAt)
   const wished = isInWishlist(product.id)
   const href = productPath(product.id)
@@ -206,6 +210,8 @@ const ProductCard = ({ product, preferredSize }) => {
               </>
             ) : !stockInfo.inStock ? (
               'Out of stock'
+            ) : atCustomerLimit ? (
+              `Max ${MAX_QTY_PER_ITEM_PER_CUSTOMER} per customer`
             ) : maxQty <= 0 ? (
               'Max in bag'
             ) : (

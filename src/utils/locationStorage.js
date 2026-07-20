@@ -2,8 +2,10 @@ import { STORAGE } from '../config'
 
 export const LOCATION_EVENT = 'pahadlink:location'
 export const ADDRESSES_EVENT = 'pahadlink:addresses'
+/** Open the header delivery-address picker (Home / after login) */
+export const OPEN_ADDRESS_EVENT = 'pahadlink:open-address'
 
-export const ADDRESS_TAGS = ['Home', 'Work', 'Other']
+export const ADDRESS_TAGS = ['Home', 'Work', 'Hotel', 'Other']
 
 export const INDIA_STATES = [
   'Uttarakhand',
@@ -44,7 +46,9 @@ export function normalizeLocation(input = {}) {
     .replace(/\D/g, '')
     .slice(0, 6)
   const line1 = String(input.line1 || input.address || '').trim()
-  const area = String(input.area || input.landmark || '').trim()
+  const floor = String(input.floor || '').trim()
+  const area = String(input.area || input.locality || '').trim()
+  const landmark = String(input.landmark || '').trim()
   const fullAddress = String(input.fullAddress || '').trim()
   const tag = ADDRESS_TAGS.includes(input.tag) ? input.tag : 'Home'
   const name = String(input.name || '').trim()
@@ -59,6 +63,8 @@ export function normalizeLocation(input = {}) {
       (pin ? `Pincode ${pin}` : 'Selected location')
   }
 
+  const resolvedLine1 = line1 || area || city || label
+
   return {
     id: input.id || null,
     tag,
@@ -67,9 +73,13 @@ export function normalizeLocation(input = {}) {
     label,
     fullAddress:
       fullAddress ||
-      [line1, area, city, state, pin].filter(Boolean).join(', '),
-    line1: line1 || area || city || label,
+      [line1, floor, area, landmark, city, state, pin]
+        .filter(Boolean)
+        .join(', '),
+    line1: resolvedLine1,
+    floor,
     area,
+    landmark,
     city,
     state,
     pin,
@@ -77,6 +87,207 @@ export function normalizeLocation(input = {}) {
     lng: typeof input.lng === 'number' ? input.lng : undefined,
     source: input.source || 'custom',
     updatedAt: input.updatedAt || new Date().toISOString(),
+  }
+}
+
+function tokenizeAddress(text = '') {
+  return String(text)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function uniqueJoinParts(...chunks) {
+  const out = []
+  const seen = new Set()
+  for (const chunk of chunks) {
+    for (const part of tokenizeAddress(chunk)) {
+      const key = part.toLowerCase()
+      if (seen.has(key)) continue
+      if (out.some((p) => p.toLowerCase().includes(key) && p.length > part.length)) {
+        continue
+      }
+      seen.add(key)
+      out.push(part)
+    }
+  }
+  return out.join(', ')
+}
+
+function isLocalityPart(part = '') {
+  return /sector\s*\d*|phase\s*\d*|block\s*[a-z0-9]|nagar|colony|enclave|extension|\broad\b|marg|chowk|market|village|tehsil|township|society|layout|cross\b/i.test(
+    part
+  )
+}
+
+/**
+ * Split a fetched GPS/search address into form fields:
+ * house (line1) · locality (area) · city · pin — not one blob in house.
+ * Always rebuilds from the richest fullAddress when available.
+ */
+export function splitAddressForForm(input = {}) {
+  let city = String(input.city || '').trim()
+  let state = matchState(input.state || '')
+  let pin = String(input.pin || input.pincode || '')
+    .replace(/\D/g, '')
+    .slice(0, 6)
+  const floor = String(input.floor || '').trim()
+  let landmark = String(input.landmark || '').trim()
+  let area = String(input.area || input.locality || '').trim()
+  let line1 = String(input.line1 || input.address || '').trim()
+  const fullAddress = String(input.fullAddress || input.label || '').trim()
+
+  const isMetaPart = (part) => {
+    const p = String(part || '').trim()
+    if (!p) return true
+    if (/^india$/i.test(p)) return true
+    if (/^\d{6}$/.test(p.replace(/\s/g, ''))) return true
+    if (pin && p.replace(/\D/g, '').includes(pin)) return true
+    if (state && p.toLowerCase() === state.toLowerCase()) return true
+    if (
+      city &&
+      (p.toLowerCase() === city.toLowerCase() ||
+        (p.toLowerCase() === 'gurgaon' && city.toLowerCase() === 'gurugram') ||
+        (p.toLowerCase() === 'gurugram' && city.toLowerCase() === 'gurgaon') ||
+        p.toLowerCase().includes(city.toLowerCase()))
+    ) {
+      return true
+    }
+    if (
+      /^(uttarakhand|haryana|delhi|nct of delhi|uttar pradesh|himachal pradesh|rajasthan|punjab|maharashtra|karnataka|gurgaon|gurugram)$/i.test(
+        p
+      )
+    ) {
+      return true
+    }
+    return false
+  }
+
+  if (!pin) {
+    const hit = `${fullAddress} ${line1}`.match(/\b(\d{6})\b/)
+    if (hit) pin = hit[1]
+  }
+
+  // Prefer fullAddress as source of truth for splitting
+  let sourceParts = tokenizeAddress(fullAddress)
+  if (sourceParts.length < 2) {
+    sourceParts = uniqueJoinParts(line1, area, city)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  }
+
+  if (!city) {
+    const trailing = [...tokenizeAddress(fullAddress)].reverse()
+    for (const part of trailing) {
+      if (isMetaPart(part)) continue
+      if (isLocalityPart(part)) continue
+      if (part.length >= 3) {
+        city = part
+        break
+      }
+    }
+  }
+
+  // Normalize Gurgaon / Gurugram
+  if (/^gurgaon$/i.test(city)) city = 'Gurugram'
+
+  let parts = sourceParts.filter((p) => !isMetaPart(p))
+
+  if (city) {
+    parts = parts.filter((p) => {
+      const low = p.toLowerCase()
+      const c = city.toLowerCase()
+      if (low === c) return false
+      if (c === 'gurugram' && low === 'gurgaon') return false
+      if (c === 'gurgaon' && low === 'gurugram') return false
+      return true
+    })
+  }
+
+  if (parts.length >= 1) {
+    // First token = house/building; rest = full locality
+    let splitAt = 1
+    // Keep short codes with building name: "B1-4, Spaze IT Park"
+    if (
+      parts.length >= 3 &&
+      parts[0].length <= 16 &&
+      !isLocalityPart(parts[1])
+    ) {
+      splitAt = 2
+    }
+    // If first part is already a locality keyword, leave house empty for user
+    if (isLocalityPart(parts[0]) && !line1) {
+      splitAt = 0
+    }
+
+    const houseParts = parts.slice(0, splitAt)
+    const areaParts = parts.slice(splitAt)
+
+    // Keep an existing short house name if it isn't already in parts
+    if (
+      line1 &&
+      tokenizeAddress(line1).length === 1 &&
+      !parts.some((p) => p.toLowerCase() === line1.toLowerCase())
+    ) {
+      line1 = uniqueJoinParts(line1, houseParts.join(', '))
+    } else {
+      line1 = houseParts.join(', ') || line1
+    }
+
+    const nextArea = areaParts.join(', ')
+    // Always prefer the fuller locality from the fetched address
+    if (nextArea) {
+      area =
+        !area ||
+        nextArea.length >= area.length ||
+        tokenizeAddress(nextArea).length >= tokenizeAddress(area).length
+          ? nextArea
+          : uniqueJoinParts(area, nextArea)
+    } else if (!area && input.area) {
+      area = String(input.area).trim()
+    }
+  }
+
+  // Merge structured area from geocode if form locality is still thin
+  const seedArea = String(input.area || '').trim()
+  if (seedArea) {
+    area = uniqueJoinParts(area, seedArea)
+  }
+
+  // Final: drop house tokens duplicated inside locality
+  if (area && line1) {
+    const houseSet = new Set(tokenizeAddress(line1).map((p) => p.toLowerCase()))
+    area = tokenizeAddress(area)
+      .filter((p) => !houseSet.has(p.toLowerCase()))
+      .join(', ')
+  }
+
+  // Landmark: optional nearby POI if present separately and not already used
+  if (!landmark && input.landmark) {
+    landmark = String(input.landmark).trim()
+  }
+
+  return {
+    id: input.id || null,
+    tag: ADDRESS_TAGS.includes(input.tag) ? input.tag : 'Home',
+    name: String(input.name || '').trim(),
+    phone: String(input.phone || '')
+      .replace(/\D/g, '')
+      .slice(0, 10),
+    line1: line1 || '',
+    floor,
+    area: area || '',
+    landmark: landmark || '',
+    city: city || '',
+    state: state || 'Uttarakhand',
+    pin: pin || '',
+    fullAddress:
+      fullAddress ||
+      [line1, floor, area, landmark, city, state, pin].filter(Boolean).join(', '),
+    lat: typeof input.lat === 'number' ? input.lat : undefined,
+    lng: typeof input.lng === 'number' ? input.lng : undefined,
+    source: input.source || 'custom',
   }
 }
 
@@ -135,7 +346,7 @@ function migrateAddressesIfNeeded(list) {
         name: checkout.name || '',
         phone: checkout.phone || '',
         line1: checkout.address || '',
-        area: checkout.landmark || '',
+        landmark: checkout.landmark || '',
         city: checkout.city || '',
         state: checkout.state || '',
         pin: checkout.pincode || '',
@@ -168,6 +379,53 @@ export function listAddresses() {
   } catch {
     return migrateAddressesIfNeeded([])
   }
+}
+
+/** Active pin/location, else first saved address — for checkout autofill */
+export function getPreferredDeliveryAddress() {
+  const active = readLocation()
+  if (active && (active.line1 || active.city || active.pin)) {
+    return active
+  }
+  const list = listAddresses()
+  return list[0] || null
+}
+
+/** True when shipping address has street, city, and 6-digit pin */
+export function hasCompleteShippingAddress(loc = getPreferredDeliveryAddress()) {
+  const isComplete = (entry) => {
+    if (!entry) return false
+    const line1 = String(entry.line1 || entry.address || '').trim()
+    const city = String(entry.city || '').trim()
+    const pin = String(entry.pin || entry.pincode || '')
+      .replace(/\D/g, '')
+      .slice(0, 6)
+    return line1.length >= 4 && Boolean(city) && /^\d{6}$/.test(pin)
+  }
+
+  if (isComplete(loc)) return true
+
+  try {
+    const raw = localStorage.getItem(STORAGE.CHECKOUT_ADDRESS)
+    if (!raw) return false
+    return isComplete(JSON.parse(raw))
+  } catch {
+    return false
+  }
+}
+
+export function requestOpenAddressPicker(detail = {}) {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(
+    new CustomEvent(OPEN_ADDRESS_EVENT, {
+      detail: {
+        message:
+          detail.message ||
+          'Add a complete PahadLink delivery address to continue checkout.',
+        ...detail,
+      },
+    })
+  )
 }
 
 export function getAddressById(id) {
@@ -248,14 +506,17 @@ export function locationToCheckoutFields(location) {
     }
   }
   const loc = normalizeLocation(location)
+  const street = [loc.line1, loc.floor ? `Floor ${loc.floor}` : '']
+    .filter(Boolean)
+    .join(', ')
   return {
-    address: loc.line1 || loc.label || '',
+    address: street || loc.fullAddress || loc.label || '',
     city: loc.city || '',
     state: loc.state || '',
     pincode: loc.pin || '',
     name: loc.name || '',
     phone: loc.phone || '',
-    landmark: loc.area || '',
+    landmark: [loc.landmark, loc.area].filter(Boolean).join(' · '),
     addressId: loc.id || '',
     tag: loc.tag || 'Home',
   }

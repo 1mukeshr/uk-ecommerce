@@ -3,6 +3,7 @@ import { Link, Navigate, useParams } from 'react-router-dom'
 import Breadcrumb from '../../components/layout/Breadcrumb'
 import Footer from '../../components/layout/Footer'
 import ProductCard from '../../components/products/ProductCard'
+import ProductReviews from '../../components/products/ProductReviews'
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -12,7 +13,7 @@ import {
   StarRating,
   TruckIcon,
 } from '../../components/icons'
-import { ROUTES, categoryPath } from '../../config'
+import { ROUTES, categoryPath, MAX_QTY_PER_ITEM_PER_CUSTOMER } from '../../config'
 import {
   getProductById,
   getRelatedProducts,
@@ -20,6 +21,7 @@ import {
   getVariantBySize,
 } from '../../data/siteData'
 import { useShop } from '../../context/ShopContext'
+import { fetchProductReviews } from '../../services/reviewService'
 
 const RELATED_VISIBLE = 5
 
@@ -33,8 +35,13 @@ const ProductDetail = () => {
     [product]
   )
 
-  const { addToCart, toggleWishlist, isInWishlist, getCartQtyForVariant } =
-    useShop()
+  const {
+    addToCart,
+    toggleWishlist,
+    isInWishlist,
+    getCartQtyForVariant,
+    getCartQtyForProduct,
+  } = useShop()
   const [activeImage, setActiveImage] = useState(0)
   const [size, setSize] = useState('')
   const [qty, setQty] = useState(1)
@@ -43,6 +50,10 @@ const ProductDetail = () => {
   const [canSlideLeft, setCanSlideLeft] = useState(false)
   const [canSlideRight, setCanSlideRight] = useState(false)
   const [zoom, setZoom] = useState({ active: false, x: 50, y: 50 })
+  const [liveRating, setLiveRating] = useState({
+    average: product?.rating || 0,
+    count: 0,
+  })
   const addedTimer = useRef(null)
   const relatedTrackRef = useRef(null)
   const zoomFrame = useRef(0)
@@ -134,9 +145,44 @@ const ProductDetail = () => {
     })
   }
 
+  const scrollToReviews = (event) => {
+    event?.preventDefault?.()
+    const target = document.getElementById('product-reviews')
+    if (!target) return
+
+    const header = document.querySelector('.site-header')
+    const offset = (header?.getBoundingClientRect?.().height || 72) + 12
+    const top = target.getBoundingClientRect().top + window.scrollY - offset
+
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    window.history.replaceState(null, '', '#product-reviews')
+  }
+
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
   }, [id])
+
+  useEffect(() => {
+    if (window.location.hash !== '#product-reviews') return undefined
+    const timer = window.setTimeout(() => scrollToReviews(), 120)
+    return () => window.clearTimeout(timer)
+  }, [product?.id])
+
+  useEffect(() => {
+    if (!product?.id) return undefined
+    let alive = true
+    setLiveRating({ average: product.rating || 0, count: 0 })
+    fetchProductReviews(product.id).then((data) => {
+      if (!alive) return
+      setLiveRating({
+        average: data.summary.average || product.rating || 0,
+        count: data.summary.count || 0,
+      })
+    })
+    return () => {
+      alive = false
+    }
+  }, [product?.id, product?.rating])
 
   useEffect(() => {
     if (!product) return
@@ -191,7 +237,16 @@ const ProductDetail = () => {
     product && selectedSize
       ? getCartQtyForVariant?.(product.id, selectedSize) || 0
       : 0
-  const previewMaxQty = Math.max(0, previewStock.stock - previewInCart)
+  const previewInProduct =
+    product ? getCartQtyForProduct?.(product.id) || 0 : 0
+  const previewCustomerRoom = Math.max(
+    0,
+    MAX_QTY_PER_ITEM_PER_CUSTOMER - previewInProduct
+  )
+  const previewMaxQty = Math.min(
+    previewCustomerRoom,
+    Math.max(0, previewStock.stock - previewInCart)
+  )
 
   useEffect(() => {
     setQty((q) => Math.min(Math.max(1, q), Math.max(1, previewMaxQty || 1)))
@@ -205,8 +260,14 @@ const ProductDetail = () => {
   const selected = getVariantBySize(product, size)
   const stockInfo = getStockStatus(product, selected.size)
   const inCartQty = getCartQtyForVariant?.(product.id, selected.size) || 0
-  const maxQty = Math.max(0, stockInfo.stock - inCartQty)
+  const inCartProduct = getCartQtyForProduct?.(product.id) || 0
+  const customerRoom = Math.max(0, MAX_QTY_PER_ITEM_PER_CUSTOMER - inCartProduct)
+  const maxQty = Math.min(
+    customerRoom,
+    Math.max(0, stockInfo.stock - inCartQty)
+  )
   const canAdd = stockInfo.inStock && maxQty > 0
+  const atCustomerLimit = customerRoom <= 0
   const off =
     selected.compareAt > selected.price
       ? Math.round(
@@ -320,11 +381,31 @@ const ProductDetail = () => {
 
               <h1>{product.name}</h1>
 
-              {product.rating != null && (
+              {(liveRating.average > 0 || product.rating != null) && (
                 <div className="product-detail__rating">
-                  <StarRating rating={Math.round(product.rating)} />
-                  <strong>{product.rating.toFixed(1)}</strong>
-                  <span>Verified ratings</span>
+                  <button
+                    type="button"
+                    className="product-detail__rating-btn"
+                    onClick={scrollToReviews}
+                    aria-label="See ratings and reviews"
+                  >
+                    <StarRating rating={liveRating.average || product.rating} />
+                    <strong>
+                      {(liveRating.average || product.rating || 0).toFixed(1)}
+                    </strong>
+                    <span>
+                      {liveRating.count > 0
+                        ? `${liveRating.count} rating${liveRating.count === 1 ? '' : 's'}`
+                        : 'Verified ratings'}
+                    </span>
+                  </button>
+                  <a
+                    href="#product-reviews"
+                    className="product-detail__rating-link"
+                    onClick={scrollToReviews}
+                  >
+                    See reviews
+                  </a>
                 </div>
               )}
 
@@ -448,6 +529,8 @@ const ProductDetail = () => {
                     </>
                   ) : !stockInfo.inStock ? (
                     'Out of stock'
+                  ) : atCustomerLimit ? (
+                    `Max ${MAX_QTY_PER_ITEM_PER_CUSTOMER} per customer`
                   ) : maxQty <= 0 ? (
                     'Max in bag'
                   ) : (
@@ -493,21 +576,16 @@ const ProductDetail = () => {
 
         <section className="product-detail-tabs">
           <div className="container">
-            <header className="product-detail-tabs__intro">
-              <p className="product-detail-tabs__eyebrow">Product guide</p>
-              <h2>What you’re buying</h2>
-            </header>
-
-            <div className="product-detail-tabs__layout">
+            <div className="product-detail-tabs__panel-wrap">
               <div
                 className="product-detail-tabs__nav"
                 role="tablist"
                 aria-label="Product information"
               >
                 {[
-                  { id: 'description', label: 'Description', hint: 'Story & use' },
-                  { id: 'details', label: 'Details', hint: 'Specs' },
-                  { id: 'highlights', label: 'Highlights', hint: 'Why it stands out' },
+                  { id: 'description', label: 'Description' },
+                  { id: 'details', label: 'Specifications' },
+                  { id: 'highlights', label: 'Highlights' },
                 ].map((item) => (
                   <button
                     key={item.id}
@@ -522,8 +600,7 @@ const ProductDetail = () => {
                     }`}
                     onClick={() => setTab(item.id)}
                   >
-                    <span className="product-detail-tabs__tab-label">{item.label}</span>
-                    <span className="product-detail-tabs__tab-hint">{item.hint}</span>
+                    {item.label}
                   </button>
                 ))}
               </div>
@@ -537,14 +614,14 @@ const ProductDetail = () => {
               >
                 {tab === 'description' && (
                   <div className="product-detail-tabs__block">
-                    <h3 className="product-detail-tabs__title">Description</h3>
-                    <p className="product-detail-tabs__lead">{product.description}</p>
+                    <p className="product-detail-tabs__lead">
+                      {product.description}
+                    </p>
                   </div>
                 )}
 
                 {tab === 'details' && (
                   <div className="product-detail-tabs__block">
-                    <h3 className="product-detail-tabs__title">Details</h3>
                     <dl className="product-detail-spec">
                       {product.details.map((row) => (
                         <div key={row.label} className="product-detail-spec__row">
@@ -558,13 +635,10 @@ const ProductDetail = () => {
 
                 {tab === 'highlights' && (
                   <div className="product-detail-tabs__block">
-                    <h3 className="product-detail-tabs__title">Highlights</h3>
                     <ul className="product-detail-highlights">
-                      {product.highlights.map((line, index) => (
+                      {product.highlights.map((line) => (
                         <li key={line}>
-                          <span className="product-detail-highlights__num" aria-hidden="true">
-                            {String(index + 1).padStart(2, '0')}
-                          </span>
+                          <CheckCircleIcon size={15} />
                           <span>{line}</span>
                         </li>
                       ))}
@@ -575,6 +649,16 @@ const ProductDetail = () => {
             </div>
           </div>
         </section>
+
+        <ProductReviews
+          product={product}
+          onSummaryChange={(next) =>
+            setLiveRating({
+              average: next.average || product.rating || 0,
+              count: next.count || 0,
+            })
+          }
+        />
 
         {related.length > 0 && (
           <section className="product-detail-related">

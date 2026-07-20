@@ -4,15 +4,19 @@ import { UserIcon, GoogleIcon } from '../../components/icons'
 import AuthLayout from '../../components/auth/AuthLayout'
 import PasswordField from '../../components/auth/PasswordField'
 import { useAuth } from '../../context/AuthContext'
-import { ROUTES } from '../../config'
+import {
+  ROUTES,
+  postCheckoutLoginState,
+  resolvePostAuthPath,
+} from '../../config'
 
 function resolveReturnPath(from) {
-  if (!from) return ROUTES.HOME
+  if (!from) return ''
   if (typeof from === 'string') return from
   if (typeof from === 'object' && from.pathname) {
     return `${from.pathname}${from.search || ''}${from.hash || ''}`
   }
-  return ROUTES.HOME
+  return ''
 }
 
 const Login = () => {
@@ -24,16 +28,24 @@ const Login = () => {
   const [message, setMessage] = useState('')
 
   const from = resolveReturnPath(location.state?.from)
+  const intent = location.state?.intent
   const isCheckoutIntent =
-    location.state?.intent === 'checkout' || from.startsWith(ROUTES.CHECKOUT)
+    intent === 'checkout' || from.startsWith(ROUTES.CHECKOUT)
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target
     setForm((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }))
   }
 
-  const goAfterAuth = () => {
-    navigate(from, { replace: true })
+  const goAfterAuth = (user) => {
+    const path = resolvePostAuthPath(user, from, intent)
+    navigate(path, {
+      replace: true,
+      state:
+        isCheckoutIntent && path === ROUTES.HOME
+          ? postCheckoutLoginState()
+          : undefined,
+    })
   }
 
   const onSubmit = async (e) => {
@@ -41,8 +53,12 @@ const Login = () => {
     setMessage('')
     setSubmitting(true)
     try {
-      await login({ username: form.username, password: form.password })
-      goAfterAuth()
+      const user = await login({
+        username: form.username,
+        password: form.password,
+        remember: form.remember,
+      })
+      goAfterAuth(user)
     } catch (err) {
       setMessage(err.message)
       setError?.(err.message)
@@ -55,8 +71,8 @@ const Login = () => {
     setMessage('')
     setSubmitting(true)
     try {
-      await loginWithGoogle()
-      goAfterAuth()
+      const user = await loginWithGoogle()
+      goAfterAuth(user)
     } catch (err) {
       setMessage(err.message || 'Google sign-in failed')
     } finally {
@@ -69,14 +85,15 @@ const Login = () => {
       title="Welcome back"
       subtitle={
         isCheckoutIntent
-          ? 'Sign in to complete your order'
-          : 'Sign in to continue shopping'
+          ? 'Sign in to continue — we’ll take you home to add your delivery address'
+          : 'Sign in to your PahadLink account'
       }
     >
       <form className="auth-form" onSubmit={onSubmit} noValidate>
         {isCheckoutIntent && (
           <p className="auth-alert auth-alert--info" role="status">
-            Please log in to continue with checkout.
+            After login you’ll land on Home. Add your delivery address, then
+            open your bag to checkout.
           </p>
         )}
         {message && <p className="auth-alert auth-alert--error">{message}</p>}

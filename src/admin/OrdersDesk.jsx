@@ -13,7 +13,12 @@ import {
   StatusDonut,
   OrdersBarChart,
   RevenueSparkline,
-  buildDailySeries,
+  KpiSpark,
+  buildPeriodSeries,
+  PERIOD_OPTIONS,
+  periodChartTitle,
+  periodRevenueTitle,
+  periodRangeHint,
 } from './AdminCharts'
 
 const formatPrice = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`
@@ -57,7 +62,7 @@ const ADMIN_NEXT = {
     { status: 'cancelled', label: 'Cancel' },
   ],
   confirmed: [
-    { status: 'processing', label: 'Start processing' },
+    { status: 'processing', label: 'Mark packed' },
     { status: 'shipped', label: 'Ship' },
     { status: 'cancelled', label: 'Cancel' },
   ],
@@ -65,7 +70,11 @@ const ADMIN_NEXT = {
     { status: 'shipped', label: 'Ship' },
     { status: 'cancelled', label: 'Cancel' },
   ],
-  shipped: [{ status: 'delivered', label: 'Mark delivered' }],
+  shipped: [
+    { status: 'out_for_delivery', label: 'Out for delivery' },
+    { status: 'delivered', label: 'Mark delivered' },
+  ],
+  out_for_delivery: [{ status: 'delivered', label: 'Mark delivered' }],
   delivered: [],
   return_requested: [
     { status: 'returned', label: 'Accept return' },
@@ -76,12 +85,17 @@ const ADMIN_NEXT = {
 }
 
 const SELLER_NEXT = {
+  pending: [{ status: 'confirmed', label: 'Confirm' }],
   confirmed: [
-    { status: 'processing', label: 'Start processing' },
+    { status: 'processing', label: 'Mark packed' },
     { status: 'shipped', label: 'Ship' },
   ],
   processing: [{ status: 'shipped', label: 'Ship' }],
-  shipped: [{ status: 'delivered', label: 'Mark delivered' }],
+  shipped: [
+    { status: 'out_for_delivery', label: 'Out for delivery' },
+    { status: 'delivered', label: 'Mark delivered' },
+  ],
+  out_for_delivery: [{ status: 'delivered', label: 'Mark delivered' }],
   return_requested: [{ status: 'returned', label: 'Accept return' }],
 }
 
@@ -90,6 +104,7 @@ const STATUS_COLORS = {
   confirmed: '#2f6fa8',
   processing: '#5b6fd4',
   shipped: '#127048',
+  out_for_delivery: '#0d8a5a',
   delivered: '#0a4f33',
   cancelled: '#c0394f',
   return_requested: '#c45c3a',
@@ -119,6 +134,8 @@ export default function OrdersDesk({ mode = 'admin' }) {
   const [invQuery, setInvQuery] = useState('')
   const [invFilter, setInvFilter] = useState('all') // all | low | out
   const [orderPage, setOrderPage] = useState(1)
+  const [updatedAt, setUpdatedAt] = useState(null)
+  const [period, setPeriod] = useState('week')
   const ORDER_PAGE_SIZE = 8
 
   useEffect(() => {
@@ -128,7 +145,7 @@ export default function OrdersDesk({ mode = 'admin' }) {
 
   useEffect(() => {
     setOrderPage(1)
-  }, [statusFilter, debouncedQuery])
+  }, [statusFilter, debouncedQuery, period])
 
   useEffect(() => {
     if (!message) return undefined
@@ -140,18 +157,19 @@ export default function OrdersDesk({ mode = 'admin' }) {
     setLoading(true)
     setError('')
     try {
-      const params = {}
+      const params = { period }
       if (statusFilter) params.status = statusFilter
       if (debouncedQuery) params.q = debouncedQuery
 
       const [list, st, analytics] = await Promise.all([
         fetchOrders(params),
-        fetchOrderStats(),
-        fetchOrders({}),
+        fetchOrderStats({ period }),
+        fetchOrders({ period }),
       ])
       setOrders(list)
       setAllOrders(analytics)
       setStats(st)
+      setUpdatedAt(new Date())
 
       if (isAdmin) {
         try {
@@ -165,7 +183,7 @@ export default function OrdersDesk({ mode = 'admin' }) {
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, debouncedQuery, isAdmin])
+  }, [statusFilter, debouncedQuery, isAdmin, period])
 
   useEffect(() => {
     load()
@@ -179,13 +197,23 @@ export default function OrdersDesk({ mode = 'admin' }) {
         'confirmed',
         'processing',
         'shipped',
+        'out_for_delivery',
         'delivered',
         'return_requested',
         'returned',
         'cancelled',
       ]
     }
-    return ['', 'confirmed', 'processing', 'shipped', 'delivered', 'return_requested']
+    return [
+      '',
+      'pending',
+      'confirmed',
+      'processing',
+      'shipped',
+      'out_for_delivery',
+      'delivered',
+      'return_requested',
+    ]
   }, [isAdmin])
 
   const chipOptions = useMemo(() => {
@@ -197,7 +225,13 @@ export default function OrdersDesk({ mode = 'admin' }) {
     }))
   }, [statusOptions, stats])
 
-  const daily = useMemo(() => buildDailySeries(allOrders, 7), [allOrders])
+  const daily = useMemo(
+    () => buildPeriodSeries(allOrders, period),
+    [allOrders, period]
+  )
+  const rangeHint = periodRangeHint(period)
+  const chartTitle = periodChartTitle(period)
+  const revenueTitle = periodRevenueTitle(period)
 
   const donutSegments = useMemo(() => {
     const s = stats || {}
@@ -205,15 +239,27 @@ export default function OrdersDesk({ mode = 'admin' }) {
       ? [
           { key: 'pending', label: 'Pending', value: s.pending || 0, color: STATUS_COLORS.pending },
           { key: 'confirmed', label: 'Confirmed', value: s.confirmed || 0, color: STATUS_COLORS.confirmed },
-          { key: 'processing', label: 'Processing', value: s.processing || 0, color: STATUS_COLORS.processing },
+          { key: 'processing', label: 'Packed', value: s.processing || 0, color: STATUS_COLORS.processing },
           { key: 'shipped', label: 'Shipped', value: s.shipped || 0, color: STATUS_COLORS.shipped },
+          {
+            key: 'out_for_delivery',
+            label: 'Out for delivery',
+            value: s.out_for_delivery || 0,
+            color: STATUS_COLORS.out_for_delivery,
+          },
           { key: 'delivered', label: 'Delivered', value: s.delivered || 0, color: STATUS_COLORS.delivered },
           { key: 'cancelled', label: 'Cancelled', value: s.cancelled || 0, color: STATUS_COLORS.cancelled },
         ]
       : [
           { key: 'confirmed', label: 'Confirmed', value: s.confirmed || 0, color: STATUS_COLORS.confirmed },
-          { key: 'processing', label: 'Processing', value: s.processing || 0, color: STATUS_COLORS.processing },
+          { key: 'processing', label: 'Packed', value: s.processing || 0, color: STATUS_COLORS.processing },
           { key: 'shipped', label: 'Shipped', value: s.shipped || 0, color: STATUS_COLORS.shipped },
+          {
+            key: 'out_for_delivery',
+            label: 'Out for delivery',
+            value: s.out_for_delivery || 0,
+            color: STATUS_COLORS.out_for_delivery,
+          },
           { key: 'delivered', label: 'Delivered', value: s.delivered || 0, color: STATUS_COLORS.delivered },
         ]
     return rows
@@ -342,7 +388,7 @@ export default function OrdersDesk({ mode = 'admin' }) {
   const weekRevenue = daily.reduce((s, d) => s + d.revenue, 0)
   const needsAction = isAdmin
     ? (stats?.pending || 0) + (stats?.return_requested || stats?.returns || 0)
-    : (stats?.confirmed || 0) + (stats?.processing || 0)
+    : (stats?.pending || 0) + (stats?.confirmed || 0) + (stats?.processing || 0)
 
   const orderPageCount = Math.max(1, Math.ceil(orders.length / ORDER_PAGE_SIZE))
   const safeOrderPage = Math.min(orderPage, orderPageCount)
@@ -352,19 +398,40 @@ export default function OrdersDesk({ mode = 'admin' }) {
 
   return (
     <AdminLayout mode={mode}>
+      <div className="admin-desk">
       <header className="admin-head">
-        <div>
-          <p className="admin-head__kicker">{mode} portal</p>
+        <div className="admin-head__copy">
           <h1>{title}</h1>
-          <p>
-            {isAdmin
-              ? 'Track sales, confirm payments, and keep Himalayan stock moving.'
-              : 'Pick, pack, ship — keep every hill order on schedule.'}
-          </p>
         </div>
         <div className="admin-head__actions">
-          <button type="button" className="admin-btn admin-btn--ghost" onClick={load}>
-            Refresh
+          <div className="admin-period" role="group" aria-label="Time range">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.key}
+                type="button"
+                className={`admin-period__btn${period === opt.key ? ' is-active' : ''}`}
+                onClick={() => setPeriod(opt.key)}
+                aria-pressed={period === opt.key}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {updatedAt && (
+            <span className="admin-head__meta" title={updatedAt.toLocaleString('en-IN')}>
+              Updated {updatedAt.toLocaleTimeString('en-IN', {
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+            </span>
+          )}
+          <button
+            type="button"
+            className="admin-btn admin-btn--ghost"
+            onClick={load}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
       </header>
@@ -378,40 +445,80 @@ export default function OrdersDesk({ mode = 'admin' }) {
             }`}
             onClick={() => setStatusFilter('')}
           >
-            <span>Total orders</span>
+            <div className="admin-kpi__top">
+              <span>Total orders</span>
+              <KpiSpark
+                values={daily.map((d) => d.value)}
+                labels={daily.map((d) => d.label)}
+              />
+            </div>
             <strong>{stats.total}</strong>
-            <em>{weekOrders} in last 7 days</em>
+            <em>
+              {weekOrders} in {rangeHint.toLowerCase()}
+            </em>
           </button>
           {isAdmin && (
             <article className="admin-kpi__card admin-kpi__card--accent">
-              <span>Paid revenue</span>
+              <div className="admin-kpi__top">
+                <span>Paid revenue</span>
+                <KpiSpark
+                  values={daily.map((d) => d.revenue)}
+                  labels={daily.map((d) => d.label)}
+                  tone="light"
+                />
+              </div>
               <strong>{formatPrice(stats.revenue)}</strong>
-              <em>{formatPrice(weekRevenue)} this week</em>
+              <em>
+                {formatPrice(weekRevenue)} · {rangeHint.toLowerCase()}
+              </em>
             </article>
           )}
           <button
             type="button"
-            className={`admin-kpi__card admin-kpi__card--click${
-              statusFilter === (isAdmin ? 'pending' : 'confirmed')
-                ? ' admin-kpi__card--active'
-                : ''
+            className={`admin-kpi__card admin-kpi__card--click admin-kpi__card--warn${
+              statusFilter === 'pending' ? ' admin-kpi__card--active' : ''
             }`}
-            onClick={() => setFilter(isAdmin ? 'pending' : 'confirmed')}
+            onClick={() => setFilter('pending')}
           >
-            <span>Needs action</span>
+            <div className="admin-kpi__top">
+              <span>Needs action</span>
+              <KpiSpark
+                values={daily.map((d) => d.value)}
+                labels={daily.map((d) => d.label)}
+                tone="warn"
+              />
+            </div>
             <strong>{needsAction}</strong>
-            <em>{isAdmin ? 'Pending + returns' : 'Confirmed + processing'}</em>
+            <em>
+              {isAdmin
+                ? 'Pending + returns'
+                : 'Pending + confirmed + processing'}
+            </em>
           </button>
           <button
             type="button"
-            className={`admin-kpi__card admin-kpi__card--click${
-              statusFilter === 'shipped' ? ' admin-kpi__card--active' : ''
+            className={`admin-kpi__card admin-kpi__card--click admin-kpi__card--ship${
+              statusFilter === 'shipped' || statusFilter === 'out_for_delivery'
+                ? ' admin-kpi__card--active'
+                : ''
             }`}
             onClick={() => setFilter('shipped')}
           >
-            <span>In transit</span>
-            <strong>{stats.shipped || 0}</strong>
-            <em>{stats.delivered || 0} delivered</em>
+            <div className="admin-kpi__top">
+              <span>In transit</span>
+              <KpiSpark
+                values={daily.map((d) => d.value)}
+                labels={daily.map((d) => d.label)}
+                tone="info"
+              />
+            </div>
+            <strong>
+              {(stats.shipped || 0) + (stats.out_for_delivery || 0)}
+            </strong>
+            <em>
+              {stats.out_for_delivery || 0} out for delivery ·{' '}
+              {stats.delivered || 0} delivered
+            </em>
           </button>
         </div>
       )}
@@ -420,28 +527,34 @@ export default function OrdersDesk({ mode = 'admin' }) {
         <section className="admin-panel-card">
           <header className="admin-panel-card__head">
             <h2>Status mix</h2>
-            <p>Click a status chip below to filter the queue</p>
+            <p>{rangeHint} · tap a status to filter</p>
           </header>
-          <StatusDonut segments={donutSegments} />
+          <StatusDonut
+            segments={donutSegments}
+            onSelect={(key) => setFilter(key)}
+          />
         </section>
 
         <section className="admin-panel-card">
           <header className="admin-panel-card__head">
-            <h2>Orders · 7 days</h2>
-            <p>Daily volume</p>
+            <h2>{chartTitle}</h2>
+            <p>{rangeHint}</p>
           </header>
-          <OrdersBarChart series={daily} />
+          <OrdersBarChart series={daily} period={period} />
         </section>
 
         {isAdmin && (
           <section className="admin-panel-card">
             <header className="admin-panel-card__head">
-              <h2>Paid revenue trend</h2>
-              <p>Last 7 days</p>
+              <h2>{revenueTitle}</h2>
+              <p>{rangeHint}</p>
             </header>
-            <RevenueSparkline points={daily.map((d) => ({ value: d.revenue }))} />
+            <RevenueSparkline
+              period={period}
+              series={daily.map((d) => ({ label: d.label, value: d.revenue }))}
+            />
             <p className="admin-panel-card__foot">
-              Week total <strong>{formatPrice(weekRevenue)}</strong>
+              Period total <strong>{formatPrice(weekRevenue)}</strong>
             </p>
           </section>
         )}
@@ -470,7 +583,10 @@ export default function OrdersDesk({ mode = 'admin' }) {
 
       <section className="admin-orders-section">
         <header className="admin-orders-section__head">
-          <h2>Orders queue</h2>
+          <div>
+            <h2>Orders queue</h2>
+            <p>Search, filter, and move orders through fulfilment</p>
+          </div>
           <span className="admin-orders-section__count">
             {loading
               ? '…'
@@ -503,15 +619,10 @@ export default function OrdersDesk({ mode = 'admin' }) {
             setDebouncedQuery(query.trim())
           }}
         >
-          <div className="admin-toolbar__search">
-            <button
-              type="submit"
-              className="admin-toolbar__search-btn"
-              aria-label="Search orders"
-              title="Search"
-            >
-              <SearchIcon size={15} />
-            </button>
+          <label className="admin-toolbar__search">
+            <span className="admin-toolbar__search-ico" aria-hidden="true">
+              <SearchIcon size={16} />
+            </span>
             <input
               type="search"
               placeholder="Search order #, name, email, tracking"
@@ -534,7 +645,7 @@ export default function OrdersDesk({ mode = 'admin' }) {
                 ×
               </button>
             )}
-          </div>
+          </label>
         </form>
 
         {error && <p className="admin-alert">{error}</p>}
@@ -577,17 +688,24 @@ export default function OrdersDesk({ mode = 'admin' }) {
                   const showTracking =
                     order.status === 'processing' ||
                     order.status === 'shipped' ||
+                    order.status === 'out_for_delivery' ||
                     order.status === 'confirmed'
                   const itemSummary = (order.items || []).slice(0, 2)
                   const extraItems = Math.max(0, (order.items || []).length - 2)
-                  const shipLine = [
-                    order.shippingAddress?.line1,
-                    order.shippingAddress?.city,
-                    order.shippingAddress?.state,
-                    order.shippingAddress?.pincode,
-                  ]
-                    .filter(Boolean)
-                    .join(', ')
+                  const addr = order.shippingAddress || {}
+                  const shipParts = []
+                  const pushShip = (value) => {
+                    const s = String(value || '').trim()
+                    if (!s) return
+                    const joined = shipParts.join(' ').toLowerCase()
+                    if (joined.includes(s.toLowerCase())) return
+                    shipParts.push(s)
+                  }
+                  pushShip(addr.line1)
+                  pushShip(addr.city)
+                  pushShip(addr.state)
+                  pushShip(addr.pincode)
+                  const shipLine = shipParts.join(', ')
                   const showDetail =
                     showTracking ||
                     Boolean(order.returnReason) ||
@@ -711,7 +829,10 @@ export default function OrdersDesk({ mode = 'admin' }) {
                         <tr className="admin-table__detail">
                           <td colSpan={7}>
                             {shipLine && (
-                              <p className="admin-card__ship">Ship to: {shipLine}</p>
+                              <p className="admin-card__ship">
+                                <span className="admin-card__ship-label">Ship to</span>
+                                <span className="admin-card__ship-text">{shipLine}</span>
+                              </p>
                             )}
                             {order.returnReason && (
                               <p className="admin-card__return">
@@ -915,6 +1036,7 @@ export default function OrdersDesk({ mode = 'admin' }) {
           )}
         </section>
       )}
+      </div>
     </AdminLayout>
   )
 }

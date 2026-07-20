@@ -5,6 +5,7 @@ export const ORDER_STATUSES = [
   'confirmed',
   'processing',
   'shipped',
+  'out_for_delivery',
   'delivered',
   'cancelled',
   'return_requested',
@@ -13,16 +14,29 @@ export const ORDER_STATUSES = [
 
 export const PAYMENT_STATUSES = ['pending', 'paid', 'failed', 'refunded']
 
-/** Allowed status moves by role */
+/** Flipkart-style fulfilment path (PahadLink) */
 export const STATUS_TRANSITIONS = {
   pending: ['confirmed', 'cancelled'],
   confirmed: ['processing', 'shipped', 'cancelled'],
   processing: ['shipped', 'cancelled'],
-  shipped: ['delivered'],
+  shipped: ['out_for_delivery', 'delivered'],
+  out_for_delivery: ['delivered'],
   delivered: ['return_requested'],
   return_requested: ['returned', 'delivered'],
   returned: [],
   cancelled: [],
+}
+
+export const STATUS_TIMELINE_NOTES = {
+  pending: 'Order placed',
+  confirmed: 'Order confirmed',
+  processing: 'Packed and ready to ship',
+  shipped: 'Shipped',
+  out_for_delivery: 'Out for delivery',
+  delivered: 'Delivered successfully',
+  cancelled: 'Order cancelled',
+  return_requested: 'Return requested',
+  returned: 'Return completed',
 }
 
 const orderItemSchema = new mongoose.Schema(
@@ -139,15 +153,78 @@ orderSchema.methods.toSafeJSON = function toSafeJSON() {
   }
 }
 
-export function buildOrderNumber() {
-  const stamp = Date.now().toString(36).toUpperCase()
-  const rand = Math.floor(Math.random() * 900 + 100)
-  return `PL-${stamp}-${rand}`
-}
-
 export function canTransition(from, to) {
   const allowed = STATUS_TRANSITIONS[from] || []
   return allowed.includes(to)
+}
+
+/** Brand prefix — first live order is PAHADLINK0101 */
+export const ORDER_NUMBER_PREFIX = 'PAHADLINK'
+export const ORDER_NUMBER_START = 101
+
+function formatOrderNumber(n) {
+  return `${ORDER_NUMBER_PREFIX}${String(Math.max(ORDER_NUMBER_START, n)).padStart(4, '0')}`
+}
+
+/**
+ * Next PahadLink order id: PAHADLINK0101, PAHADLINK0102, …
+ * Reads the highest existing numeric suffix so restarts stay sequential.
+ */
+export async function buildOrderNumber() {
+  const Model = mongoose.models.Order
+  if (!Model) {
+    return formatOrderNumber(ORDER_NUMBER_START)
+  }
+
+  try {
+    const rows = await Model.aggregate([
+      {
+        $match: {
+          orderNumber: {
+            $regex: `^${ORDER_NUMBER_PREFIX}\\d+$`,
+            $options: 'i',
+          },
+        },
+      },
+      {
+        $project: {
+          digits: {
+            $substrBytes: [
+              '$orderNumber',
+              ORDER_NUMBER_PREFIX.length,
+              {
+                $subtract: [
+                  { $strLenBytes: '$orderNumber' },
+                  ORDER_NUMBER_PREFIX.length,
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $project: {
+          n: {
+            $convert: {
+              input: '$digits',
+              to: 'int',
+              onError: 0,
+              onNull: 0,
+            },
+          },
+        },
+      },
+      { $group: { _id: null, max: { $max: '$n' } } },
+    ])
+
+    const max = Number(rows[0]?.max) || 0
+    const next = max >= ORDER_NUMBER_START ? max + 1 : ORDER_NUMBER_START
+    return formatOrderNumber(next)
+  } catch {
+    // Fallback if aggregate fails — still branded + unique-ish
+    const stamp = Date.now().toString().slice(-6)
+    return `${ORDER_NUMBER_PREFIX}${stamp}`
+  }
 }
 
 export default mongoose.model('Order', orderSchema)

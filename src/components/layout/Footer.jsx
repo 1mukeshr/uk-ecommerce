@@ -97,6 +97,7 @@ const Footer = () => {
           <div className="footer-links">
             <h4>Company</h4>
             <ul>
+              <li><Link to={ROUTES.ABOUT}>About PahadLink</Link></li>
               <li><Link to={`${ROUTES.HOME}#why`}>Why we&apos;re unique</Link></li>
               <li><Link to={`${ROUTES.HOME}#reviews`}>Customer reviews</Link></li>
               <li><Link to={ROUTES.CONTACT}>Partner with us</Link></li>
@@ -132,6 +133,7 @@ const Footer = () => {
           </p>
           <div className="footer-bottom__right">
             <nav className="footer-legal" aria-label="Legal">
+              <Link to={ROUTES.ABOUT}>About</Link>
               <Link to={ROUTES.TERMS}>Terms</Link>
               <Link to={ROUTES.PRIVACY}>Privacy</Link>
               <Link to={ROUTES.REFUNDS}>Refunds</Link>

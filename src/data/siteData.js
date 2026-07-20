@@ -25,7 +25,6 @@ import packRingaalBasket from '../assets/images/products/pack-ringaal-basket.png
 import packJhangora from '../assets/images/products/pack-jhangora.png'
 import packSingori from '../assets/images/products/pack-singori.png'
 import packGangajal from '../assets/images/products/pack-gangajal.png'
-import packRudrakshaMala from '../assets/images/products/pack-rudraksha-mala.png'
 import packFestivalHamper from '../assets/images/products/pack-festival-hamper.png'
 import packOrganicGiftBox from '../assets/images/products/pack-organic-gift-box.png'
 import { capitalizeWords } from '../utils/text'
@@ -124,11 +123,10 @@ export const categoryGroups = [
     id: 'spiritual',
     name: 'Spiritual & Puja Items',
     headline: 'Sacred picks from the Himalaya',
-    blurb: 'Gangajal, rudraksha, and puja essentials for home rituals and meaningful gifting.',
+    blurb: 'Gangajal and puja essentials for home rituals and meaningful gifting.',
     banner: categoryBannerSpiritual,
     items: [
       { name: 'Gangajal', icon: 'water' },
-      { name: 'Rudraksha', icon: 'bead' },
       { name: 'Puja Kits', icon: 'puja' },
       { name: 'Incense', icon: 'incense' },
     ],
@@ -390,18 +388,6 @@ const productCatalog = [
     subcategory: 'Gangajal',
   },
   {
-    id: 'rudraksha-mala',
-    name: 'Rudraksha Mala | 5 Mukhi Authentic Beads',
-    image: packRudrakshaMala,
-    price: 699,
-    compareAt: 999,
-    sizes: ['108 beads'],
-    rating: 4.7,
-    tags: ['handpicked'],
-    categoryId: 'spiritual',
-    subcategory: 'Rudraksha',
-  },
-  {
     id: 'festival-hamper',
     name: 'Festival Hamper | Honey, Sweets & Grains',
     image: packFestivalHamper,
@@ -427,15 +413,47 @@ const productCatalog = [
   },
 ]
 
-/** All product names title-cased for consistent storefront display */
+/** Static stock defaults (aligned with server/services/inventory.js) */
 const STOCK_OVERRIDES = {
-  'pahadi-topi': { stock: 0 },
+  'pahadi-rajma': { stock: 40 },
+  'raw-honey': { stock: 28 },
+  'mandua-flour': { stock: 32 },
+  'gahat-dal': { stock: 30 },
   'red-rice': { stockBySize: { '1 kg': 18, '2 kg': 8, '5 kg': 0 } },
   'bal-mithai': { stockBySize: { '250g': 14, '500g': 0 } },
-  'rudraksha-mala': { stock: 3 },
-  'festival-hamper': { stockBySize: { Standard: 9, Premium: 0 } },
+  'herbal-tea': { stock: 36 },
+  'buransh-squash': { stock: 22 },
+  'pahadi-topi': { stock: 0 },
   'ringaal-basket': { stockBySize: { Medium: 7, Large: 0 } },
+  jhangora: { stock: 26 },
+  singori: { stock: 20 },
+  gangajal: { stock: 50 },
+  'festival-hamper': { stockBySize: { Standard: 9, Premium: 0 } },
   'organic-gift-box': { stockBySize: { 'Box of 4': 12, 'Box of 6': 2 } },
+}
+
+/** Live stock from API (GET /orders/stock) — overlays static defaults */
+let liveStockById = null
+
+export function setLiveStockOverlay(items) {
+  if (!Array.isArray(items)) {
+    liveStockById = null
+    return
+  }
+  const map = Object.create(null)
+  for (const row of items) {
+    const id = String(row.productId || '').trim()
+    if (!id) continue
+    map[id] = {
+      stock: typeof row.stock === 'number' ? row.stock : null,
+      stockBySize: row.stockBySize || null,
+    }
+  }
+  liveStockById = map
+}
+
+export function clearLiveStockOverlay() {
+  liveStockById = null
 }
 
 export const products = productCatalog.map((product) => {
@@ -448,7 +466,7 @@ export const products = productCatalog.map((product) => {
         ? override.stock
         : typeof product.stock === 'number'
           ? product.stock
-          : 24,
+          : null,
     name: capitalizeWords(product.name),
   }
 })
@@ -462,6 +480,21 @@ export const getVariantStock = (product, size) => {
   if (product.inStock === false) return 0
 
   const label = size || product.sizes?.[0]
+  const live = liveStockById?.[product.id]
+  if (live) {
+    if (
+      live.stockBySize &&
+      label != null &&
+      Object.prototype.hasOwnProperty.call(live.stockBySize, label)
+    ) {
+      return Math.max(0, Number(live.stockBySize[label]) || 0)
+    }
+    if (typeof live.stock === 'number') {
+      return Math.max(0, live.stock)
+    }
+    if (live.stockBySize) return 0
+  }
+
   if (
     product.stockBySize &&
     label != null &&
@@ -474,7 +507,8 @@ export const getVariantStock = (product, size) => {
     return Math.max(0, product.stock)
   }
 
-  return 24
+  // No inventing stock — wait for live overlay or use product overrides only
+  return 0
 }
 
 export const isVariantInStock = (product, size) =>

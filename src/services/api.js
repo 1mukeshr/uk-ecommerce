@@ -20,7 +20,8 @@ api.interceptors.request.use((config) => {
   }
   config.baseURL = baseURL
 
-  const token = localStorage.getItem(STORAGE.TOKEN)
+  const token =
+    localStorage.getItem(STORAGE.TOKEN) || sessionStorage.getItem(STORAGE.TOKEN)
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }

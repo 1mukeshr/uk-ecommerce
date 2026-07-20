@@ -3,6 +3,10 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
 import { ROUTES, productPath } from '../../config'
+import {
+  hasCompleteShippingAddress,
+  requestOpenAddressPicker,
+} from '../../utils/locationStorage'
 import { CartIcon, CloseIcon, TruckIcon, ArrowRightIcon } from '../icons'
 
 const formatPrice = (n) => `₹${n.toLocaleString('en-IN')}`
@@ -37,6 +41,13 @@ const CartDrawer = () => {
     if (!isAuthenticated) {
       navigate(ROUTES.LOGIN, {
         state: { from: ROUTES.CHECKOUT, intent: 'checkout' },
+      })
+      return
+    }
+    if (!hasCompleteShippingAddress()) {
+      navigate(ROUTES.HOME)
+      requestOpenAddressPicker({
+        message: 'Add a complete address, then open your bag to checkout.',
       })
       return
     }

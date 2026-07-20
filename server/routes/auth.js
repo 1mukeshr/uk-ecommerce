@@ -6,6 +6,7 @@ import { users } from '../services/users.js'
 import { protect, authorize, signToken } from '../middleware/auth.js'
 import { isFileDbMode } from '../config/db.js'
 import { verifyFirebaseIdToken } from '../services/verifyFirebaseIdToken.js'
+import { sendMail } from '../services/mail.js'
 
 const router = Router()
 
@@ -126,6 +127,25 @@ router.post('/forgot-password', async (req, res) => {
     user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex')
     user.resetPasswordExpires = new Date(Date.now() + 60 * 60 * 1000)
     await user.save({ validateBeforeSave: false })
+
+    const front =
+      (process.env.FRONTEND_URL || '')
+        .split(',')
+        .map((s) => s.trim())
+        .find(Boolean) || 'http://localhost:5173'
+    const base = front.replace(/\/$/, '')
+    const resetUrl = `${base}/#/reset-password?token=${encodeURIComponent(resetToken)}`
+
+    await sendMail({
+      to: user.email,
+      subject: 'Reset your PahadLink password',
+      html: `
+        <p>Hi ${user.name || 'there'},</p>
+        <p>We received a request to reset your password. Use this link within 1 hour:</p>
+        <p><a href="${resetUrl}">${resetUrl}</a></p>
+        <p>If you did not request this, you can ignore this email.</p>
+      `,
+    })
 
     const payload = { ...okMessage }
     if (process.env.NODE_ENV !== 'production') {

@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
-import { ROUTES } from '../../config'
+import { ROUTES, homePathForRole } from '../../config'
 import PageLoader from '../layout/PageLoader'
 
 /** Redirect guests to login; optionally require specific roles */
@@ -28,7 +28,8 @@ const ProtectedRoute = ({ children, roles, intent }) => {
   }
 
   if (roles?.length && !roles.includes(user?.role)) {
-    return <Navigate to={ROUTES.HOME} replace />
+    // Staff land on their desk — never dump them on the customer home
+    return <Navigate to={homePathForRole(user)} replace />
   }
 
   return children

@@ -1,8 +1,10 @@
 import { Router } from 'express'
+import mongoose from 'mongoose'
 import Order, {
   ORDER_STATUSES,
   PAYMENT_STATUSES,
   STATUS_TRANSITIONS,
+  STATUS_TIMELINE_NOTES,
   buildOrderNumber,
   canTransition,
 } from '../models/Order.js'
@@ -20,13 +22,34 @@ import {
   decrementStock,
   restoreStock,
   getInventorySnapshot,
+  getStock,
 } from '../services/inventory.js'
+import { priceOrderItems } from '../services/catalog.js'
+import { MAX_QTY_PER_ITEM_PER_CUSTOMER } from '../config/constants.js'
 
 const router = Router()
 
 const PAYMENT_METHODS = ['cod', 'upi', 'card']
 
-const SELLER_STATUSES = ['confirmed', 'processing', 'shipped', 'delivered', 'return_requested']
+/** Seller can see pending COD and move them into fulfilment */
+const SELLER_STATUSES = [
+  'pending',
+  'confirmed',
+  'processing',
+  'shipped',
+  'out_for_delivery',
+  'delivered',
+  'return_requested',
+]
+
+function requireMongo(_req, res, next) {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      message: 'Orders unavailable — database disconnected. Start MongoDB or set MONGODB_URI.',
+    })
+  }
+  return next()
+}
 
 function fireAndForget(promise) {
   Promise.resolve(promise).catch((err) => {
@@ -59,8 +82,39 @@ function ensureStockForConfirm(order) {
   return { ok: true }
 }
 
+/** day | week | month | year → { from, to } inclusive calendar range */
+function periodDateRange(period = 'week') {
+  const now = new Date()
+  const to = new Date(now)
+  to.setHours(23, 59, 59, 999)
+
+  const from = new Date(now)
+  from.setHours(0, 0, 0, 0)
+
+  const key = String(period || 'week').toLowerCase()
+  if (key === 'day') {
+    // today only
+  } else if (key === 'month') {
+    from.setDate(1)
+  } else if (key === 'year') {
+    from.setMonth(0, 1)
+  } else {
+    // week — last 7 calendar days including today
+    from.setDate(from.getDate() - 6)
+  }
+
+  return { from, to, period: ['day', 'week', 'month', 'year'].includes(key) ? key : 'week' }
+}
+
+function applyCreatedAtRange(filter, period) {
+  if (!period) return filter
+  const { from, to } = periodDateRange(period)
+  filter.createdAt = { $gte: from, $lte: to }
+  return filter
+}
+
 /** Customer: my orders */
-router.get('/mine', protect, async (req, res) => {
+router.get('/mine', requireMongo, protect, async (req, res) => {
   try {
     const userId = req.user._id || req.user.id
     const email = String(req.user.email || '').trim().toLowerCase()
@@ -75,9 +129,9 @@ router.get('/mine', protect, async (req, res) => {
 })
 
 /** Admin + Seller: list orders */
-router.get('/', protect, authorize('admin', 'seller'), async (req, res) => {
+router.get('/', requireMongo, protect, authorize('admin', 'seller'), async (req, res) => {
   try {
-    const { status, q } = req.query
+    const { status, q, period } = req.query
     const filter = {}
 
     if (req.user.role === 'seller') {
@@ -88,6 +142,8 @@ router.get('/', protect, authorize('admin', 'seller'), async (req, res) => {
     } else if (status && ORDER_STATUSES.includes(status)) {
       filter.status = status
     }
+
+    applyCreatedAtRange(filter, period)
 
     if (q) {
       const text = String(q).trim()
@@ -100,7 +156,8 @@ router.get('/', protect, authorize('admin', 'seller'), async (req, res) => {
       ]
     }
 
-    const orders = await Order.find(filter).sort({ createdAt: -1 }).limit(200)
+    const limit = period === 'year' ? 1000 : period === 'month' ? 500 : 200
+    const orders = await Order.find(filter).sort({ createdAt: -1 }).limit(limit)
     res.json({ orders: orders.map((o) => o.toSafeJSON()) })
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to load orders' })
@@ -108,29 +165,43 @@ router.get('/', protect, authorize('admin', 'seller'), async (req, res) => {
 })
 
 /** Admin: order stats */
-router.get('/stats', protect, authorize('admin', 'seller'), async (req, res) => {
+router.get('/stats', requireMongo, protect, authorize('admin', 'seller'), async (req, res) => {
   try {
     const base =
       req.user.role === 'seller' ? { status: { $in: SELLER_STATUSES } } : {}
+    applyCreatedAtRange(base, req.query.period)
 
-    const [total, pending, confirmed, processing, shipped, delivered, cancelled, returns, revenue] =
-      await Promise.all([
-        Order.countDocuments(base),
-        Order.countDocuments({ ...base, status: 'pending' }),
-        Order.countDocuments({ ...base, status: 'confirmed' }),
-        Order.countDocuments({ ...base, status: 'processing' }),
-        Order.countDocuments({ ...base, status: 'shipped' }),
-        Order.countDocuments({ ...base, status: 'delivered' }),
-        Order.countDocuments({ ...base, status: 'cancelled' }),
-        Order.countDocuments({
-          ...base,
-          status: { $in: ['return_requested', 'returned'] },
-        }),
-        Order.aggregate([
-          { $match: { paymentStatus: 'paid', ...(req.user.role === 'seller' ? base : {}) } },
-          { $group: { _id: null, total: { $sum: '$totalAmount' } } },
-        ]),
-      ])
+    const [
+      total,
+      pending,
+      confirmed,
+      processing,
+      shipped,
+      outForDelivery,
+      delivered,
+      cancelled,
+      returns,
+      revenue,
+    ] = await Promise.all([
+      Order.countDocuments(base),
+      Order.countDocuments({ ...base, status: 'pending' }),
+      Order.countDocuments({ ...base, status: 'confirmed' }),
+      Order.countDocuments({ ...base, status: 'processing' }),
+      Order.countDocuments({ ...base, status: 'shipped' }),
+      Order.countDocuments({ ...base, status: 'out_for_delivery' }),
+      Order.countDocuments({ ...base, status: 'delivered' }),
+      Order.countDocuments({ ...base, status: 'cancelled' }),
+      Order.countDocuments({
+        ...base,
+        status: { $in: ['return_requested', 'returned'] },
+      }),
+      Order.aggregate([
+        { $match: { paymentStatus: 'paid', ...base } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } },
+      ]),
+    ])
+
+    const { from, to, period } = periodDateRange(req.query.period || 'week')
 
     res.json({
       total,
@@ -138,13 +209,26 @@ router.get('/stats', protect, authorize('admin', 'seller'), async (req, res) => 
       confirmed,
       processing,
       shipped,
+      out_for_delivery: outForDelivery,
       delivered,
       cancelled,
       returns,
       revenue: revenue[0]?.total || 0,
+      period,
+      from: from.toISOString(),
+      to: to.toISOString(),
     })
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to load stats' })
+  }
+})
+
+/** Public: stock levels for storefront (read-only) */
+router.get('/stock', (_req, res) => {
+  try {
+    res.json({ items: getInventorySnapshot() })
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Failed to load stock' })
   }
 })
 
@@ -160,7 +244,7 @@ router.get('/inventory', protect, authorize('admin'), (_req, res) => {
 /**
  * Create order (guest or logged-in).
  */
-router.post('/', optionalProtect, async (req, res) => {
+router.post('/', requireMongo, optionalProtect, async (req, res) => {
   try {
     const {
       customerName,
@@ -181,16 +265,88 @@ router.post('/', optionalProtect, async (req, res) => {
       })
     }
 
-    const cleanItems = items.map((item) => ({
-      productId: String(item.productId || item.id || '').trim(),
-      name: String(item.name || '').trim(),
-      size: String(item.size || item.unitSize || '').trim(),
-      quantity: Number(item.quantity ?? item.qty) || 1,
-      price: Number(item.price) || 0,
-    }))
+    const priced = priceOrderItems(items)
+    if (!priced.ok) {
+      return res.status(400).json({ message: priced.message || 'Invalid order items' })
+    }
+    const cleanItems = priced.items
 
-    if (cleanItems.some((i) => !i.name || i.price < 0 || i.quantity < 1)) {
-      return res.status(400).json({ message: 'Invalid order items' })
+    // Cap: max 3 of each product per customer (this order + past non-cancelled)
+    const qtyByProduct = new Map()
+    for (const line of cleanItems) {
+      const id = String(line.productId || '').trim()
+      if (!id) continue
+      qtyByProduct.set(id, (qtyByProduct.get(id) || 0) + Number(line.quantity || 0))
+    }
+    for (const [productId, qty] of qtyByProduct) {
+      if (qty > MAX_QTY_PER_ITEM_PER_CUSTOMER) {
+        return res.status(400).json({
+          message: `You can buy at most ${MAX_QTY_PER_ITEM_PER_CUSTOMER} of each product`,
+          productId,
+          max: MAX_QTY_PER_ITEM_PER_CUSTOMER,
+          requested: qty,
+        })
+      }
+    }
+
+    const email = String(customerEmail).trim().toLowerCase()
+    const priorRows = await Order.aggregate([
+      {
+        $match: {
+          customerEmail: email,
+          status: { $nin: ['cancelled'] },
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $match: {
+          'items.productId': { $in: [...qtyByProduct.keys()] },
+        },
+      },
+      {
+        $group: {
+          _id: '$items.productId',
+          qty: { $sum: '$items.quantity' },
+        },
+      },
+    ])
+    const priorByProduct = new Map(
+      priorRows.map((row) => [String(row._id), Number(row.qty) || 0])
+    )
+    for (const [productId, qty] of qtyByProduct) {
+      const prior = priorByProduct.get(productId) || 0
+      if (prior + qty > MAX_QTY_PER_ITEM_PER_CUSTOMER) {
+        const left = Math.max(0, MAX_QTY_PER_ITEM_PER_CUSTOMER - prior)
+        return res.status(400).json({
+          message: left
+            ? `Only ${left} more unit(s) allowed for this product (max ${MAX_QTY_PER_ITEM_PER_CUSTOMER} per customer)`
+            : `Limit reached: max ${MAX_QTY_PER_ITEM_PER_CUSTOMER} of this product per customer`,
+          productId,
+          max: MAX_QTY_PER_ITEM_PER_CUSTOMER,
+          alreadyPurchased: prior,
+          requested: qty,
+        })
+      }
+    }
+
+    // Reject if any line is out of stock
+    const shortages = []
+    for (const line of cleanItems) {
+      const available = getStock(line.productId, line.size)
+      if (available < line.quantity) {
+        shortages.push({
+          productId: line.productId,
+          size: line.size || null,
+          need: line.quantity,
+          available,
+        })
+      }
+    }
+    if (shortages.length) {
+      return res.status(409).json({
+        message: 'Insufficient stock for one or more items',
+        shortages,
+      })
     }
 
     const itemsTotal = cleanItems.reduce(
@@ -198,7 +354,6 @@ router.post('/', optionalProtect, async (req, res) => {
       0
     )
 
-    const email = String(customerEmail).trim().toLowerCase()
     const firstOrder = await isFirstOrderEmail(email)
     const requestedCode = normalizeCouponCode(couponCode)
 
@@ -216,63 +371,80 @@ router.post('/', optionalProtect, async (req, res) => {
     })
 
     const isAdmin = req.user?.role === 'admin'
-    const method = PAYMENT_METHODS.includes(paymentMethod) ? paymentMethod : 'cod'
-    const onlinePaid = method === 'upi' || method === 'card'
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      return res.status(400).json({ message: 'Select a valid payment method' })
+    }
+    const method = paymentMethod
 
     let nextPaymentStatus = 'pending'
     let nextStatus = 'pending'
 
     if (isAdmin && PAYMENT_STATUSES.includes(paymentStatus)) {
       nextPaymentStatus = paymentStatus
-    } else if (onlinePaid) {
-      nextPaymentStatus = 'paid'
     }
 
     if (isAdmin && ORDER_STATUSES.includes(status)) {
       nextStatus = status
-    } else if (onlinePaid) {
-      nextStatus = 'confirmed'
     }
 
-    let stockDeducted = false
-    if (nextStatus === 'confirmed' || nextStatus === 'processing') {
-      const stock = decrementStock(cleanItems)
-      if (!stock.ok) {
-        return res.status(409).json({
-          message: stock.message || 'Insufficient stock',
-          shortages: stock.shortages,
-        })
+    // Reserve stock at place-order so pending COD cannot oversell
+    const stock = decrementStock(cleanItems)
+    if (!stock.ok) {
+      return res.status(409).json({
+        message: stock.message || 'Insufficient stock',
+        shortages: stock.shortages,
+      })
+    }
+    const stockDeducted = true
+
+    let order
+    try {
+      let lastErr
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        try {
+          order = await Order.create({
+            orderNumber: await buildOrderNumber(),
+            user: req.user?._id || req.user?.id || null,
+            customerName: String(customerName).trim(),
+            customerEmail: email,
+            customerPhone: String(customerPhone || '').trim(),
+            items: cleanItems,
+            itemsTotal: totals.itemsTotal,
+            shippingFee: totals.shippingFee,
+            discountAmount: totals.discountAmount,
+            couponCode: totals.couponCode,
+            totalAmount: totals.totalAmount,
+            shippingAddress: shippingAddress || {},
+            notes: String(notes || '').trim(),
+            paymentMethod: method,
+            status: nextStatus,
+            paymentStatus: nextPaymentStatus,
+            stockDeducted,
+            timeline: [
+              {
+                status: nextStatus,
+                note: 'Order placed',
+                by: req.user?.email || email,
+                at: new Date(),
+              },
+            ],
+          })
+          lastErr = null
+          break
+        } catch (createErr) {
+          lastErr = createErr
+          // Duplicate order number race — allocate again
+          if (createErr?.code === 11000 && /orderNumber/i.test(String(createErr.message))) {
+            continue
+          }
+          throw createErr
+        }
       }
-      stockDeducted = true
+      if (!order) throw lastErr || new Error('Failed to allocate order number')
+    } catch (createErr) {
+      restoreStock(cleanItems)
+      throw createErr
     }
-
-    const order = await Order.create({
-      orderNumber: buildOrderNumber(),
-      user: req.user?._id || req.user?.id || null,
-      customerName: String(customerName).trim(),
-      customerEmail: email,
-      customerPhone: String(customerPhone || '').trim(),
-      items: cleanItems,
-      itemsTotal: totals.itemsTotal,
-      shippingFee: totals.shippingFee,
-      discountAmount: totals.discountAmount,
-      couponCode: totals.couponCode,
-      totalAmount: totals.totalAmount,
-      shippingAddress: shippingAddress || {},
-      notes: String(notes || '').trim(),
-      paymentMethod: method,
-      status: nextStatus,
-      paymentStatus: nextPaymentStatus,
-      stockDeducted,
-      timeline: [
-        {
-          status: nextStatus,
-          note: 'Order placed',
-          by: req.user?.email || email,
-          at: new Date(),
-        },
-      ],
-    })
 
     fireAndForget(notifyOrderConfirmed(order))
 
@@ -287,7 +459,7 @@ router.post('/', optionalProtect, async (req, res) => {
 })
 
 /** Customer: request return on delivered order */
-router.post('/:id/return', protect, async (req, res) => {
+router.post('/:id/return', requireMongo, protect, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
     if (!order) return res.status(404).json({ message: 'Order not found' })
@@ -318,7 +490,7 @@ router.post('/:id/return', protect, async (req, res) => {
 })
 
 /** Customer: leave review on delivered/returned order */
-router.post('/:id/review', protect, async (req, res) => {
+router.post('/:id/review', requireMongo, protect, async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
     if (!order) return res.status(404).json({ message: 'Order not found' })
@@ -341,12 +513,22 @@ router.post('/:id/review', protect, async (req, res) => {
       return res.status(400).json({ message: 'Rating must be 1–5' })
     }
 
+    const comment = String(req.body.comment || '').trim().slice(0, 500)
+
     order.review = {
       rating,
-      comment: String(req.body.comment || '').trim().slice(0, 500),
+      comment,
       createdAt: new Date(),
     }
     await order.save()
+
+    // Also publish product-level ratings (1–5) for each ordered item
+    try {
+      const { createReviewsFromOrder } = await import('./reviews.js')
+      await createReviewsFromOrder(order, { rating, comment })
+    } catch (err) {
+      console.error('[orders] product review sync:', err.message)
+    }
 
     res.json({ message: 'Review saved', order: order.toSafeJSON() })
   } catch (error) {
@@ -355,7 +537,7 @@ router.post('/:id/review', protect, async (req, res) => {
 })
 
 /** Admin + Seller: update order status / payment / shipping */
-router.patch('/:id', protect, authorize('admin', 'seller'), async (req, res) => {
+router.patch('/:id', requireMongo, protect, authorize('admin', 'seller'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
     if (!order) {
@@ -382,18 +564,29 @@ router.patch('/:id', protect, authorize('admin', 'seller'), async (req, res) => 
       }
 
       if (role === 'seller') {
-        const sellerAllowed = ['processing', 'shipped', 'delivered', 'returned']
+        const sellerAllowed = [
+          'confirmed',
+          'processing',
+          'shipped',
+          'out_for_delivery',
+          'delivered',
+          'returned',
+        ]
         if (!sellerAllowed.includes(status)) {
           return res.status(403).json({
-            message: 'Sellers can set processing, shipped, delivered, or returned',
+            message:
+              'Sellers can set confirmed, processing, shipped, out for delivery, delivered, or returned',
           })
         }
         if (!canTransition(order.status, status) && order.status !== status) {
-          // Allow seller jump confirmed → processing/shipped
           const sellerJump =
-            (order.status === 'confirmed' && ['processing', 'shipped'].includes(status)) ||
+            (order.status === 'pending' && status === 'confirmed') ||
+            (order.status === 'confirmed' &&
+              ['processing', 'shipped'].includes(status)) ||
             (order.status === 'processing' && status === 'shipped') ||
-            (order.status === 'shipped' && status === 'delivered') ||
+            (order.status === 'shipped' &&
+              ['out_for_delivery', 'delivered'].includes(status)) ||
+            (order.status === 'out_for_delivery' && status === 'delivered') ||
             (order.status === 'return_requested' && status === 'returned')
           if (!sellerJump) {
             return res.status(400).json({
@@ -403,8 +596,7 @@ router.patch('/:id', protect, authorize('admin', 'seller'), async (req, res) => 
           }
         }
       } else if (status !== order.status && !canTransition(order.status, status)) {
-        // Admin can force any status, but warn via allowed list for invalid jumps
-        // Still allow admin override for ops flexibility
+        // Admin can force any status for ops flexibility
       }
 
       if (status === 'confirmed' || status === 'processing') {
@@ -432,7 +624,23 @@ router.patch('/:id', protect, authorize('admin', 'seller'), async (req, res) => 
 
       order.status = status
       if (status !== prevStatus) {
-        pushTimeline(order, status, `Status → ${status}`, actor)
+        pushTimeline(
+          order,
+          status,
+          STATUS_TIMELINE_NOTES[status] || `Status → ${status}`,
+          actor
+        )
+      }
+
+      // COD: payment completes when the order is delivered
+      if (
+        status === 'delivered' &&
+        order.paymentMethod === 'cod' &&
+        order.paymentStatus !== 'paid' &&
+        order.paymentStatus !== 'refunded'
+      ) {
+        order.paymentStatus = 'paid'
+        pushTimeline(order, status, 'Cash collected on delivery', actor)
       }
 
       if (role === 'seller' && !order.assignedSeller) {
@@ -476,7 +684,7 @@ router.patch('/:id', protect, authorize('admin', 'seller'), async (req, res) => 
 })
 
 /** Admin: delete order */
-router.delete('/:id', protect, authorize('admin'), async (req, res) => {
+router.delete('/:id', requireMongo, protect, authorize('admin'), async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
     if (!order) {

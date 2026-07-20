@@ -1,0 +1,179 @@
+import { STORAGE } from '../config'
+import { products, testimonials } from '../data/siteData'
+
+const SEED_NAMES = [
+  { name: 'Ananya Joshi', location: 'Dehradun' },
+  { name: 'Rohit Negi', location: 'Nainital' },
+  { name: 'Priya Bisht', location: 'Delhi' },
+  { name: 'Vikram Rawat', location: 'Haridwar' },
+  { name: 'Meera Shah', location: 'Mumbai' },
+  { name: 'Kabir Singh', location: 'Chandigarh' },
+]
+
+const SEED_COMMENTS = [
+  'Fresh and authentic — tastes just like the hills.',
+  'Packaging was neat and delivery was quick. Will reorder.',
+  'Great quality for the price. Family loved it.',
+  'Pure pahadi flavour. Exactly what I was looking for.',
+  'Good product overall. Slightly delayed shipping but worth it.',
+  'Perfect gift from Uttarakhand. Highly recommend.',
+]
+
+function hashString(value = '') {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash << 5) - hash + value.charCodeAt(i)
+    hash |= 0
+  }
+  return Math.abs(hash)
+}
+
+export function emptySummary() {
+  return {
+    average: 0,
+    count: 0,
+    distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+  }
+}
+
+export function buildRatingSummary(reviews = []) {
+  const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+  let total = 0
+  let count = 0
+
+  for (const review of reviews) {
+    const rating = Math.min(5, Math.max(1, Math.round(Number(review.rating) || 0)))
+    if (!rating) continue
+    distribution[rating] += 1
+    total += Number(review.rating) || rating
+    count += 1
+  }
+
+  return {
+    average: count ? Math.round((total / count) * 10) / 10 : 0,
+    count,
+    distribution,
+  }
+}
+
+function readLocalStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE.REVIEWS)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeLocalStore(store) {
+  try {
+    localStorage.setItem(STORAGE.REVIEWS, JSON.stringify(store))
+  } catch {
+    // ignore quota
+  }
+}
+
+function getLocalReviews(productId) {
+  const store = readLocalStore()
+  const list = store[productId]
+  return Array.isArray(list) ? list : []
+}
+
+function saveLocalReview(productId, review) {
+  const store = readLocalStore()
+  const existing = Array.isArray(store[productId]) ? store[productId] : []
+  const next = [review, ...existing.filter((item) => item.id !== review.id)]
+  store[productId] = next.slice(0, 80)
+  writeLocalStore(store)
+  return next
+}
+
+/** Deterministic seed reviews so every product has ratings out of 5 */
+export function getSeedReviewsForProduct(product) {
+  if (!product?.id) return []
+  const base = Number(product.rating) || 4.5
+  const seedCount = 3 + (hashString(product.id) % 3)
+  const list = []
+
+  for (let i = 0; i < seedCount; i += 1) {
+    const pick = hashString(`${product.id}-${i}`)
+    const person = SEED_NAMES[pick % SEED_NAMES.length]
+    const delta = [0, 0, -1, 1, 0][pick % 5]
+    const rating = Math.min(5, Math.max(1, Math.round(base + delta)))
+    list.push({
+      id: `seed-${product.id}-${i}`,
+      productId: product.id,
+      productName: product.name,
+      userName: person.name,
+      userLocation: person.location,
+      rating,
+      comment: SEED_COMMENTS[(pick + i) % SEED_COMMENTS.length],
+      verified: true,
+      createdAt: new Date(Date.now() - (i + 1) * 86400000 * 3).toISOString(),
+      isSeed: true,
+    })
+  }
+
+  return list
+}
+
+export function mergeProductReviews(product, remoteReviews = [], { includeSeeds = true } = {}) {
+  const local = getLocalReviews(product?.id)
+  const seeds = includeSeeds ? getSeedReviewsForProduct(product) : []
+  const byId = new Map()
+
+  // Prefer real reviews over seeds when ids collide
+  for (const review of [...seeds, ...remoteReviews, ...local]) {
+    if (!review?.id) continue
+    byId.set(String(review.id), review)
+  }
+
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+  )
+}
+
+export function getProductRating(product, reviews) {
+  const list = reviews || mergeProductReviews(product, [])
+  const summary = buildRatingSummary(list)
+  if (summary.count > 0) return summary
+  const fallback = Number(product?.rating) || 0
+  return {
+    average: fallback,
+    count: fallback ? 12 : 0,
+    distribution: emptySummary().distribution,
+  }
+}
+
+export function getHomeReviewFeed(remote = []) {
+  if (remote.length) return remote
+
+  const fromProducts = products.slice(0, 6).flatMap((product, index) => {
+    const seed = getSeedReviewsForProduct(product)[0]
+    if (!seed) return []
+    return [
+      {
+        ...seed,
+        id: `home-${product.id}`,
+        productName: product.name.split('|')[0].trim(),
+        createdAt: new Date(Date.now() - (index + 2) * 86400000).toISOString(),
+      },
+    ]
+  })
+
+  const fromTestimonials = testimonials.map((item, index) => ({
+    id: `testimonial-${index}`,
+    productId: '',
+    productName: item.product || '',
+    userName: item.name,
+    userLocation: item.location,
+    rating: item.rating,
+    comment: item.text,
+    verified: true,
+    createdAt: new Date(Date.now() - (index + 1) * 86400000).toISOString(),
+  }))
+
+  return [...fromTestimonials, ...fromProducts].slice(0, 9)
+}

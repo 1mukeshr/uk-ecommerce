@@ -11,12 +11,21 @@ import {
   PackageIcon,
   LogOutIcon,
   ArrowLeftIcon,
+  CloseIcon,
+  GiftIcon,
 } from '../icons'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
-import { ROUTES, AUTH_PATHS, HIDE_CATEGORY_NAV_PATHS } from '../../config'
+import { ROUTES, AUTH_PATHS, HIDE_CATEGORY_NAV_PATHS, STORAGE } from '../../config'
 import { capitalizeWords } from '../../utils/text'
 import logo from '../../assets/images/logo.png'
+
+const PROMO = {
+  text: 'Flat 15% off on your first order',
+  code: 'PAHAD15',
+  extra: 'Free shipping above ₹499',
+  to: `${ROUTES.SHOP}?tag=bestseller`,
+}
 
 const Header = () => {
   const { pathname } = useLocation()
@@ -24,11 +33,19 @@ const Header = () => {
   const { user, isAuthenticated, logout, isAdmin, isSeller } = useAuth()
   const { cartCount, wishlistCount, openCart } = useShop()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [promoOpen, setPromoOpen] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE.PROMO_BAR) !== '1'
+    } catch {
+      return true
+    }
+  })
   const menuRef = useRef(null)
 
   const isAuthPage = AUTH_PATHS.includes(pathname)
   const showCategoryNav =
     !isAuthPage && !HIDE_CATEGORY_NAV_PATHS.includes(pathname)
+  const showPromo = promoOpen && !isAuthPage
 
   const accountLabel = capitalizeWords(
     user?.name?.split(' ')[0] || user?.username || 'Account'
@@ -51,8 +68,53 @@ const Header = () => {
     navigate('/')
   }
 
+  const dismissPromo = () => {
+    setPromoOpen(false)
+    try {
+      localStorage.setItem(STORAGE.PROMO_BAR, '1')
+    } catch {
+      // ignore
+    }
+  }
+
   return (
-    <header className={`site-header${isAuthPage ? ' site-header--auth' : ''}`}>
+    <header
+      className={`site-header${isAuthPage ? ' site-header--auth' : ''}${
+        showPromo ? ' has-promo' : ''
+      }`}
+    >
+      {showPromo && (
+        <div className="header-promo" role="region" aria-label="Site offer">
+          <div className="header-promo__inner">
+            <GiftIcon size={15} className="header-promo__gift" />
+            <p className="header-promo__copy">
+              <strong>{PROMO.text}</strong>
+              <span className="header-promo__sep" aria-hidden="true">
+                ·
+              </span>
+              <span>
+                Use code <em>{PROMO.code}</em>
+              </span>
+              <span className="header-promo__sep header-promo__sep--extra" aria-hidden="true">
+                ·
+              </span>
+              <span className="header-promo__extra">{PROMO.extra}</span>
+            </p>
+            <Link to={PROMO.to} className="header-promo__cta">
+              Shop now
+            </Link>
+            <button
+              type="button"
+              className="header-promo__close"
+              aria-label="Dismiss offer"
+              onClick={dismissPromo}
+            >
+              <CloseIcon size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="header-top">
         <div className="header-container">
           <div className="header-left">
@@ -72,7 +134,37 @@ const Header = () => {
           )}
 
           <nav className="header-nav" aria-label="Main navigation">
-            {!isAuthPage && (
+            {!isAuthPage && (isAdmin || isSeller) && (
+              <>
+                {isAdmin && (
+                  <Link
+                    to={ROUTES.ADMIN}
+                    className="header-icon-link"
+                    aria-label="Admin panel"
+                  >
+                    <span className="header-icon-wrap">
+                      <PackageIcon size={20} />
+                    </span>
+                    <span className="header-icon-label">Admin</span>
+                  </Link>
+                )}
+                <Link
+                  to={ROUTES.SELLER}
+                  className="header-icon-link"
+                  aria-label={isAdmin ? 'Fulfilment desk' : 'Seller desk'}
+                >
+                  <span className="header-icon-wrap">
+                    <PackageIcon size={20} />
+                  </span>
+                  <span className="header-icon-label">
+                    {isAdmin ? 'Fulfilment' : 'Seller'}
+                  </span>
+                </Link>
+                <span className="header-nav-divider" aria-hidden="true" />
+              </>
+            )}
+
+            {!isAuthPage && !isAdmin && !isSeller && (
               <>
                 <Link
                   to={ROUTES.WISHLIST}
@@ -163,24 +255,6 @@ const Header = () => {
                     </div>
 
                     <div className="header-account-dropdown__group">
-                      <Link
-                        to={ROUTES.ACCOUNT}
-                        className="header-account-item"
-                        role="menuitem"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <UserIcon size={16} />
-                        <span>My account</span>
-                      </Link>
-                      <Link
-                        to={ROUTES.ORDERS}
-                        className="header-account-item"
-                        role="menuitem"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <PackageIcon size={16} />
-                        <span>My orders</span>
-                      </Link>
                       {isAdmin && (
                         <Link
                           to={ROUTES.ADMIN}
@@ -200,18 +274,51 @@ const Header = () => {
                           onClick={() => setMenuOpen(false)}
                         >
                           <PackageIcon size={16} />
-                          <span>Seller desk</span>
+                          <span>{isAdmin ? 'Fulfilment desk' : 'Seller desk'}</span>
                         </Link>
                       )}
-                      <Link
-                        to={ROUTES.WISHLIST}
-                        className="header-account-item"
-                        role="menuitem"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <HeartIcon size={16} />
-                        <span>Wishlist</span>
-                      </Link>
+                      {!isAdmin && !isSeller && (
+                        <>
+                          <Link
+                            to={ROUTES.ACCOUNT}
+                            className="header-account-item"
+                            role="menuitem"
+                            onClick={() => setMenuOpen(false)}
+                          >
+                            <UserIcon size={16} />
+                            <span>My account</span>
+                          </Link>
+                          <Link
+                            to={ROUTES.ORDERS}
+                            className="header-account-item"
+                            role="menuitem"
+                            onClick={() => setMenuOpen(false)}
+                          >
+                            <PackageIcon size={16} />
+                            <span>My orders</span>
+                          </Link>
+                          <Link
+                            to={ROUTES.WISHLIST}
+                            className="header-account-item"
+                            role="menuitem"
+                            onClick={() => setMenuOpen(false)}
+                          >
+                            <HeartIcon size={16} />
+                            <span>Wishlist</span>
+                          </Link>
+                        </>
+                      )}
+                      {(isAdmin || isSeller) && (
+                        <Link
+                          to={ROUTES.ACCOUNT}
+                          className="header-account-item"
+                          role="menuitem"
+                          onClick={() => setMenuOpen(false)}
+                        >
+                          <UserIcon size={16} />
+                          <span>Account</span>
+                        </Link>
+                      )}
                     </div>
 
                     <div className="header-account-dropdown__foot">

@@ -27,6 +27,24 @@ export const HomeIcon = (props) => (
   </Icon>
 )
 
+export const WorkIcon = (props) => (
+  <Icon {...props}>
+    <rect x="3" y="8" width="18" height="12" rx="2" />
+    <path d="M8 8V6a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M3 13h18" />
+  </Icon>
+)
+
+export const HotelIcon = (props) => (
+  <Icon {...props}>
+    <path d="M3 21V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13" />
+    <path d="M7 21V11" />
+    <path d="M11 21V11" />
+    <path d="M15 21V4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v17" />
+    <path d="M3 21h18" />
+  </Icon>
+)
+
 export const MountainIcon = (props) => (
   <Icon {...props}>
     <path d="m3 20 6.5-12 2.5 4.5L15 7l6 13H3z" />
@@ -676,7 +694,13 @@ export const GridIcon = (props) => (
   </Icon>
 )
 
-export const StarIcon = ({ filled = true, className = '', size = 16 }) => (
+export const StarIcon = ({
+  filled = true,
+  half = false,
+  halfId = 'starHalf',
+  className = '',
+  size = 16,
+}) => (
   <svg
     viewBox="0 0 24 24"
     width={size}
@@ -684,21 +708,92 @@ export const StarIcon = ({ filled = true, className = '', size = 16 }) => (
     className={className}
     aria-hidden="true"
   >
-    <path
-      d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-      fill={filled ? 'currentColor' : 'none'}
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinejoin="round"
-    />
+    {half ? (
+      <>
+        <defs>
+          <linearGradient id={halfId} x1="0" x2="1" y1="0" y2="0">
+            <stop offset="50%" stopColor="currentColor" />
+            <stop offset="50%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+          fill={`url(#${halfId})`}
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+      </>
+    ) : (
+      <path
+        d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+        fill={filled ? 'currentColor' : 'none'}
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    )}
   </svg>
 )
 
-export const StarRating = ({ rating = 5, max = 5, className = '' }) => (
-  <div className={`star-rating ${className}`.trim()} aria-hidden="true">
-    {Array.from({ length: max }, (_, i) => (
-      <StarIcon key={i} filled={i < rating} size={16} />
-    ))}
+export const StarRating = ({ rating = 5, max = 5, size = 16, className = '' }) => {
+  const value = Math.max(0, Math.min(max, Number(rating) || 0))
+  return (
+    <div
+      className={`star-rating ${className}`.trim()}
+      aria-hidden="true"
+      title={`${value} out of ${max}`}
+    >
+      {Array.from({ length: max }, (_, i) => {
+        const full = value >= i + 1
+        const half = !full && value >= i + 0.5
+        return (
+          <StarIcon
+            key={i}
+            filled={full}
+            half={half}
+            halfId={`starHalf-${size}-${i}-${String(value).replace('.', '_')}`}
+            size={size}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+/** Interactive 1–5 star picker */
+export const StarPicker = ({
+  value = 0,
+  onChange,
+  max = 5,
+  size = 28,
+  name = 'rating',
+  disabled = false,
+}) => (
+  <div
+    className={`star-picker${disabled ? ' is-disabled' : ''}`}
+    role="radiogroup"
+    aria-label="Rate out of 5"
+  >
+    {Array.from({ length: max }, (_, i) => {
+      const score = i + 1
+      const active = score <= value
+      return (
+        <button
+          key={score}
+          type="button"
+          role="radio"
+          name={name}
+          aria-checked={value === score}
+          aria-label={`${score} out of ${max}`}
+          className={`star-picker__btn${active ? ' is-active' : ''}`}
+          disabled={disabled}
+          onClick={() => onChange?.(score)}
+        >
+          <StarIcon filled={active} size={size} />
+        </button>
+      )
+    })}
   </div>
 )
 
@@ -776,7 +871,7 @@ const resolveSubcategoryIcon = (name, categoryId) => {
   if (/rice/.test(text)) return 'rice'
   if (/rajma|gahat|bhatt|dal/.test(text)) return 'dal'
   if (/mandua|jhangora|mil/.test(text)) return 'grain'
-  if (/rudraksha/.test(text)) return 'bead'
+  if (/bead|mala/.test(text)) return 'bead'
   if (/puja/.test(text)) return 'puja'
   if (/incense/.test(text)) return 'incense'
   if (/topi/.test(text)) return 'hat'

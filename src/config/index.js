@@ -3,6 +3,9 @@
  */
 export const APP_NAME = 'PahadLink'
 
+/** Max units of the same product one customer may buy (cart + lifetime orders) */
+export const MAX_QTY_PER_ITEM_PER_CUSTOMER = 3
+
 export {
   API_BASE_URL,
   getApiBaseUrl,
@@ -19,6 +22,8 @@ export const STORAGE = {
   ADDRESSES: 'pahadlink_addresses',
   THEME: 'pahadlink_theme',
   CHECKOUT_ADDRESS: 'pahadlink_checkout_address',
+  REVIEWS: 'pahadlink_reviews',
+  PROMO_BAR: 'pahadlink_promo_bar_dismissed',
 }
 
 export const ROLES = {
@@ -46,6 +51,7 @@ export const ROUTES = {
   ADMIN: '/admin',
   SELLER: '/seller',
   CONTACT: '/contact',
+  ABOUT: '/about',
   PRIVACY: '/privacy',
   TERMS: '/terms',
   REFUNDS: '/refunds',
@@ -66,6 +72,54 @@ export const AUTH_PATHS = [
   ROUTES.RESET_PASSWORD,
 ]
 
+/** Default landing path for a signed-in role (ops staff → desk, not storefront). */
+export function homePathForRole(user) {
+  const role = user?.role
+  if (role === ROLES.ADMIN) return ROUTES.ADMIN
+  if (role === ROLES.SELLER) return ROUTES.SELLER
+  return ROUTES.HOME
+}
+
+/**
+ * Where to send the user after login/register.
+ * Checkout intent → Home first (address must be completed before checkout).
+ * Staff go to their desk unless returning to an ops URL.
+ */
+export function resolvePostAuthPath(user, from, intent) {
+  const role = user?.role
+  const isStaff = role === ROLES.ADMIN || role === ROLES.SELLER
+  const dest =
+    typeof from === 'string'
+      ? from
+      : from?.pathname
+        ? `${from.pathname}${from.search || ''}${from.hash || ''}`
+        : ''
+
+  // After login from bag/checkout: land on Home and collect address first
+  if (intent === 'checkout' || dest.startsWith(ROUTES.CHECKOUT)) {
+    if (isStaff) return homePathForRole(user)
+    return ROUTES.HOME
+  }
+
+  if (isStaff) {
+    if (dest.startsWith(ROUTES.ADMIN) || dest.startsWith(ROUTES.SELLER)) {
+      return dest
+    }
+    return homePathForRole(user)
+  }
+
+  return dest || ROUTES.HOME
+}
+
+/** Navigation state after checkout-intent login */
+export function postCheckoutLoginState() {
+  return {
+    needAddress: true,
+    resumeCheckout: true,
+    checkoutHint: 'Add your PahadLink delivery address, then open your bag to checkout.',
+  }
+}
+
 /** Hide header category bar on these pages */
 export const HIDE_CATEGORY_NAV_PATHS = [
   ROUTES.CHECKOUT,
@@ -77,4 +131,5 @@ export const HIDE_CATEGORY_NAV_PATHS = [
   ROUTES.PRIVACY,
   ROUTES.REFUNDS,
   ROUTES.CONTACT,
+  ROUTES.ABOUT,
 ]

@@ -17,31 +17,65 @@ import { signInWithGoogleFirebase, signOutFirebase } from '../services/firebaseG
 
 const AuthContext = createContext(null)
 
-function readStoredUser() {
+function readStore(preferLocal = true) {
+  if (preferLocal) {
+    const token = localStorage.getItem(STORAGE.TOKEN)
+    if (token) {
+      try {
+        const raw = localStorage.getItem(STORAGE.USER)
+        return { token, user: raw ? JSON.parse(raw) : null, remember: true }
+      } catch {
+        return { token, user: null, remember: true }
+      }
+    }
+  }
+  const token = sessionStorage.getItem(STORAGE.TOKEN)
+  if (!token) return { token: null, user: null, remember: true }
   try {
-    const raw = localStorage.getItem(STORAGE.USER)
-    return raw ? JSON.parse(raw) : null
+    const raw = sessionStorage.getItem(STORAGE.USER)
+    return { token, user: raw ? JSON.parse(raw) : null, remember: false }
   } catch {
-    return null
+    return { token, user: null, remember: false }
   }
 }
 
+function writeStore(token, user, remember) {
+  const store = remember ? localStorage : sessionStorage
+  const other = remember ? sessionStorage : localStorage
+  other.removeItem(STORAGE.TOKEN)
+  other.removeItem(STORAGE.USER)
+  store.setItem(STORAGE.TOKEN, token)
+  store.setItem(STORAGE.USER, JSON.stringify(user))
+}
+
+function clearStore() {
+  localStorage.removeItem(STORAGE.TOKEN)
+  localStorage.removeItem(STORAGE.USER)
+  sessionStorage.removeItem(STORAGE.TOKEN)
+  sessionStorage.removeItem(STORAGE.USER)
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => readStoredUser())
-  const [token, setToken] = useState(() => localStorage.getItem(STORAGE.TOKEN))
-  const [loading, setLoading] = useState(Boolean(localStorage.getItem(STORAGE.TOKEN)))
+  const initial = readStore(true)
+  const sessionOnly = !initial.token ? readStore(false) : null
+  const boot = initial.token ? initial : sessionOnly || initial
+
+  const [user, setUser] = useState(() => boot.user)
+  const [token, setToken] = useState(() => boot.token)
+  const [rememberMe, setRememberMe] = useState(() => boot.remember !== false)
+  const [loading, setLoading] = useState(Boolean(boot.token))
   const [error, setError] = useState(null)
 
-  const persistSession = useCallback((nextToken, nextUser) => {
-    localStorage.setItem(STORAGE.TOKEN, nextToken)
-    localStorage.setItem(STORAGE.USER, JSON.stringify(nextUser))
+  const persistSession = useCallback((nextToken, nextUser, options = {}) => {
+    const remember = options.remember !== false
+    writeStore(nextToken, nextUser, remember)
+    setRememberMe(remember)
     setToken(nextToken)
     setUser(nextUser)
   }, [])
 
   const clearSession = useCallback(() => {
-    localStorage.removeItem(STORAGE.TOKEN)
-    localStorage.removeItem(STORAGE.USER)
+    clearStore()
     setToken(null)
     setUser(null)
   }, [])
@@ -58,7 +92,7 @@ export function AuthProvider({ children }) {
         const me = await fetchMe()
         if (!cancelled) {
           setUser(me)
-          localStorage.setItem(STORAGE.USER, JSON.stringify(me))
+          writeStore(token, me, rememberMe)
         }
       } catch {
         if (!cancelled) clearSession()
@@ -70,7 +104,7 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true
     }
-  }, [token, clearSession])
+  }, [token, clearSession, rememberMe])
 
   const login = useCallback(
     async (credentials) => {
@@ -79,7 +113,9 @@ export function AuthProvider({ children }) {
         username: credentials.username?.trim(),
         password: credentials.password,
       })
-      persistSession(data.token, data.user)
+      persistSession(data.token, data.user, {
+        remember: credentials.remember !== false,
+      })
       return data.user
     },
     [persistSession]
@@ -94,7 +130,7 @@ export function AuthProvider({ children }) {
         username: payload.username?.trim().toLowerCase(),
         password: payload.password,
       })
-      persistSession(data.token, data.user)
+      persistSession(data.token, data.user, { remember: true })
       return data.user
     },
     [persistSession]
@@ -105,9 +141,9 @@ export function AuthProvider({ children }) {
     const { idToken } = await signInWithGoogleFirebase()
     const data = await googleLoginApi(idToken)
     if (data.token && data.user) {
-      persistSession(data.token, data.user)
+      persistSession(data.token, data.user, { remember: true })
     }
-    return data
+    return data.user
   }, [persistSession])
 
   const logout = useCallback(() => {

@@ -6,14 +6,16 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { STORAGE } from '../config'
+import { STORAGE, MAX_QTY_PER_ITEM_PER_CUSTOMER } from '../config'
 import {
   getProductById,
   getProductMinPrice,
   getVariantBySize,
   getVariantStock,
+  setLiveStockOverlay,
 } from '../data/siteData'
 import { capitalizeWords } from '../utils/text'
+import { fetchStockLevels } from '../services/orderService'
 
 const ShopContext = createContext(null)
 
@@ -43,6 +45,23 @@ export function ShopProvider({ children }) {
     withCapitalizedNames(readStore(STORAGE.WISHLIST, []))
   )
   const [cartOpen, setCartOpen] = useState(false)
+  const [stockTick, setStockTick] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchStockLevels()
+      .then((items) => {
+        if (cancelled) return
+        setLiveStockOverlay(items)
+        setStockTick((n) => n + 1)
+      })
+      .catch(() => {
+        // keep static stock defaults if API unreachable
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     localStorage.setItem(STORAGE.CART, JSON.stringify(cart))
@@ -102,8 +121,16 @@ export function ShopProvider({ children }) {
       setCart((prev) => {
         const key = `${product.id}::${unitSize}`
         const existing = prev.find((item) => item.key === key)
-        const already = existing?.qty || 0
-        const room = Math.max(0, stock - already)
+        const alreadyVariant = existing?.qty || 0
+        const alreadyProduct = prev
+          .filter((item) => item.id === product.id)
+          .reduce((sum, item) => sum + (item.qty || 0), 0)
+        const customerRoom = Math.max(
+          0,
+          MAX_QTY_PER_ITEM_PER_CUSTOMER - alreadyProduct
+        )
+        const stockRoom = Math.max(0, stock - alreadyVariant)
+        const room = Math.min(customerRoom, stockRoom)
         if (room <= 0) {
           added = false
           return prev
@@ -111,15 +138,16 @@ export function ShopProvider({ children }) {
 
         const addQty = Math.min(Math.max(1, qty), room)
         added = addQty > 0
+        const maxAllowed = Math.min(stock, MAX_QTY_PER_ITEM_PER_CUSTOMER)
 
         if (existing) {
           return prev.map((item) =>
             item.key === key
               ? {
                   ...item,
-                  qty: already + addQty,
+                  qty: alreadyVariant + addQty,
                   price: unitPrice,
-                  maxStock: stock,
+                  maxStock: maxAllowed,
                 }
               : item,
           )
@@ -135,7 +163,7 @@ export function ShopProvider({ children }) {
             price: unitPrice,
             size: unitSize,
             qty: addQty,
-            maxStock: stock,
+            maxStock: maxAllowed,
           },
         ]
       })
@@ -158,11 +186,22 @@ export function ShopProvider({ children }) {
           const stock = product
             ? getVariantStock(product, item.size)
             : Math.max(0, Number(item.maxStock) || 0)
-          const nextQty = Math.min(qty, stock)
+          const others = prev
+            .filter((row) => row.id === item.id && row.key !== key)
+            .reduce((sum, row) => sum + (row.qty || 0), 0)
+          const customerCap = Math.max(
+            0,
+            MAX_QTY_PER_ITEM_PER_CUSTOMER - others
+          )
+          const nextQty = Math.min(qty, stock, customerCap)
 
           if (nextQty <= 0) return null
 
-          return { ...item, qty: nextQty, maxStock: stock }
+          return {
+            ...item,
+            qty: nextQty,
+            maxStock: Math.min(stock, MAX_QTY_PER_ITEM_PER_CUSTOMER),
+          }
         })
         .filter(Boolean)
     })
@@ -173,6 +212,14 @@ export function ShopProvider({ children }) {
       const key = `${productId}::${size}`
       return cart.find((item) => item.key === key)?.qty || 0
     },
+    [cart],
+  )
+
+  const getCartQtyForProduct = useCallback(
+    (productId) =>
+      cart
+        .filter((item) => item.id === productId)
+        .reduce((sum, item) => sum + (item.qty || 0), 0),
     [cart],
   )
 
@@ -219,10 +266,12 @@ export function ShopProvider({ children }) {
       addToCart,
       updateCartQty,
       getCartQtyForVariant,
+      getCartQtyForProduct,
       removeFromCart,
       clearCart,
       toggleWishlist,
       isInWishlist,
+      stockTick,
     }),
     [
       cart,
@@ -237,10 +286,12 @@ export function ShopProvider({ children }) {
       addToCart,
       updateCartQty,
       getCartQtyForVariant,
+      getCartQtyForProduct,
       removeFromCart,
       clearCart,
       toggleWishlist,
       isInWishlist,
+      stockTick,
     ],
   )
 

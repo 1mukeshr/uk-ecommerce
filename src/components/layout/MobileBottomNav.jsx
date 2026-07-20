@@ -5,10 +5,11 @@ import {
   HeartIcon,
   CartIcon,
   UserIcon,
+  PackageIcon,
 } from '../icons'
 import { useAuth } from '../../context/AuthContext'
 import { useShop } from '../../context/ShopContext'
-import { AUTH_PATHS, ROUTES } from '../../config'
+import { AUTH_PATHS, ROUTES, homePathForRole } from '../../config'
 
 const hiddenExact = new Set([
   ...AUTH_PATHS,
@@ -20,14 +21,22 @@ const hiddenExact = new Set([
  */
 const MobileBottomNav = () => {
   const { pathname } = useLocation()
-  const { user, isAuthenticated } = useAuth()
+  const { user, isAuthenticated, isAdmin, isSeller } = useAuth()
   const { cartCount, wishlistCount, cartOpen, openCart } = useShop()
 
   if (hiddenExact.has(pathname)) return null
 
-  const accountTo = isAuthenticated ? ROUTES.ACCOUNT : ROUTES.LOGIN
+  const isStaff = isAdmin || isSeller
+  const deskTo = isAuthenticated && isStaff ? homePathForRole(user) : null
+  const accountTo = isAuthenticated
+    ? deskTo || ROUTES.ACCOUNT
+    : ROUTES.LOGIN
   const accountLabel = isAuthenticated
-    ? user?.name?.split(' ')[0] || user?.username || 'Account'
+    ? isAdmin
+      ? 'Admin'
+      : isSeller
+        ? 'Seller'
+        : user?.name?.split(' ')[0] || user?.username || 'Account'
     : 'Login'
   const shopActive =
     pathname === ROUTES.SHOP ||
@@ -36,7 +45,50 @@ const MobileBottomNav = () => {
   const accountActive =
     pathname === accountTo ||
     pathname.startsWith('/account') ||
-    pathname.startsWith('/orders')
+    pathname.startsWith('/orders') ||
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/seller')
+
+  if (isStaff) {
+    return (
+      <nav
+        className={`mobile-bottom-nav${cartOpen ? ' is-covered' : ''}`}
+        aria-label="Staff navigation"
+        aria-hidden={cartOpen}
+      >
+        {isAdmin && (
+          <NavLink
+            to={ROUTES.ADMIN}
+            end
+            className={({ isActive }) =>
+              `mobile-bottom-nav__item${isActive ? ' is-active' : ''}`
+            }
+          >
+            <PackageIcon size={20} />
+            <span>Admin</span>
+          </NavLink>
+        )}
+
+        <NavLink
+          to={ROUTES.SELLER}
+          className={({ isActive }) =>
+            `mobile-bottom-nav__item${isActive ? ' is-active' : ''}`
+          }
+        >
+          <PackageIcon size={20} />
+          <span>{isAdmin ? 'Fulfil' : 'Seller'}</span>
+        </NavLink>
+
+        <NavLink
+          to={accountTo}
+          className={`mobile-bottom-nav__item${accountActive ? ' is-active' : ''}`}
+        >
+          <UserIcon size={20} />
+          <span>{accountLabel}</span>
+        </NavLink>
+      </nav>
+    )
+  }
 
   return (
     <nav
