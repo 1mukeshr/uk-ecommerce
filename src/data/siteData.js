@@ -28,6 +28,12 @@ import packGangajal from '../assets/images/products/pack-gangajal.png'
 import packFestivalHamper from '../assets/images/products/pack-festival-hamper.png'
 import packOrganicGiftBox from '../assets/images/products/pack-organic-gift-box.png'
 import { capitalizeWords } from '../utils/text'
+import {
+  PRODUCT_PRICING,
+  sizeWeight,
+  nicePrice,
+} from '@pahadlink/shared/catalog'
+import { STOCK_DEFAULTS } from '@pahadlink/shared/inventoryDefaults'
 
 export const DEFAULT_PRODUCT_IMAGE = defaultProductImage
 
@@ -229,208 +235,138 @@ export const testimonials = [
   },
 ]
 
-/** Home product catalogues */
-const productCatalog = [
-  {
-    id: 'pahadi-rajma',
-    name: 'Pahadi Rajma | Kidney Beans from the Hills',
+/** Home product catalogues — pricing from shared; presentation stays here */
+const PRODUCT_PRESENTATION = {
+  'pahadi-rajma': {
     image: packPahadiRajma,
-    price: 249,
     compareAt: 399,
-    sizes: ['500g', '1 kg', '2 kg'],
     rating: 4.8,
     tags: ['bestseller', 'trending'],
     categoryId: 'organic-food',
     subcategory: 'Pahadi Rajma',
   },
-  {
-    id: 'raw-honey',
-    name: 'Raw Forest Honey | Unprocessed Himalayan Honey',
+  'raw-honey': {
     image: packRawHoney,
-    price: 349,
     compareAt: 499,
-    sizes: ['250g', '500g', '1 kg'],
     rating: 4.9,
     tags: ['bestseller', 'handpicked'],
     categoryId: 'honey-natural',
     subcategory: 'Raw Honey',
   },
-  {
-    id: 'mandua-flour',
-    name: 'Mandua Atta | Finger Millet Flour',
+  'mandua-flour': {
     image: packManduaFlour,
-    price: 189,
     compareAt: 279,
-    sizes: ['500g', '1 kg', '2 kg'],
     rating: 4.7,
     tags: ['bestseller', 'trending'],
     categoryId: 'organic-food',
     subcategory: 'Mandua',
   },
-  {
-    id: 'gahat-dal',
-    name: 'Gahat Dal | Horse Gram from Uttarakhand',
+  'gahat-dal': {
     image: packGahatDal,
-    price: 199,
     compareAt: 299,
-    sizes: ['500g', '1 kg'],
     rating: 4.6,
     tags: ['bestseller'],
     categoryId: 'organic-food',
     subcategory: 'Gahat Dal',
   },
-  {
-    id: 'red-rice',
-    name: 'Pahadi Red Rice | Naturally Aged',
+  'red-rice': {
     image: packRedRice,
-    price: 299,
     compareAt: 449,
-    sizes: ['1 kg', '2 kg', '5 kg'],
     rating: 4.8,
     tags: ['trending', 'handpicked'],
     categoryId: 'organic-food',
     subcategory: 'Red Rice',
   },
-  {
-    id: 'bal-mithai',
-    name: 'Bal Mithai | Classic Almora Sweet',
+  'bal-mithai': {
     image: packBalMithai,
-    price: 399,
     compareAt: 549,
-    sizes: ['250g', '500g'],
     rating: 4.9,
     tags: ['bestseller', 'trending'],
     categoryId: 'snacks-sweets',
     subcategory: 'Bal Mithai',
   },
-  {
-    id: 'herbal-tea',
-    name: 'Himalayan Herbal Tea | Mountain Blend',
+  'herbal-tea': {
     image: packHerbalTea,
-    price: 229,
     compareAt: 349,
-    sizes: ['100g', '250g'],
     rating: 4.7,
     tags: ['trending', 'handpicked'],
     categoryId: 'honey-natural',
     subcategory: 'Herbal Tea',
   },
-  {
-    id: 'buransh-squash',
-    name: 'Buransh Squash | Rhododendron Drink Mix',
+  'buransh-squash': {
     image: packBuranshSquash,
-    price: 279,
     compareAt: 399,
-    sizes: ['500ml', '1 L'],
     rating: 4.8,
     tags: ['trending', 'handpicked'],
     categoryId: 'honey-natural',
     subcategory: 'Jams',
   },
-  {
-    id: 'pahadi-topi',
-    name: 'Pahadi Topi | Traditional Wool Cap',
+  'pahadi-topi': {
     image: packPahadiTopi,
-    price: 449,
     compareAt: 699,
-    sizes: ['Free size'],
     rating: 4.5,
     tags: ['handpicked'],
     categoryId: 'clothing',
     subcategory: 'Pahadi Topi',
   },
-  {
-    id: 'ringaal-basket',
-    name: 'Ringaal Bamboo Basket | Handcrafted',
+  'ringaal-basket': {
     image: packRingaalBasket,
-    price: 599,
     compareAt: 899,
-    sizes: ['Medium', 'Large'],
     rating: 4.6,
     tags: ['handpicked'],
     categoryId: 'handicrafts',
     subcategory: 'Ringaal Bamboo',
   },
-  {
-    id: 'jhangora',
-    name: 'Jhangora | Barnyard Millet',
+  jhangora: {
     image: packJhangora,
-    price: 169,
     compareAt: 249,
-    sizes: ['500g', '1 kg'],
     rating: 4.7,
     tags: ['bestseller', 'trending'],
     categoryId: 'organic-food',
     subcategory: 'Jhangora',
   },
-  {
-    id: 'singori',
-    name: 'Singori | Leaf-Wrapped Kumaoni Sweet',
+  singori: {
     image: packSingori,
-    price: 349,
     compareAt: 499,
-    sizes: ['6 pcs', '12 pcs'],
     rating: 4.9,
     tags: ['trending', 'handpicked'],
     categoryId: 'snacks-sweets',
     subcategory: 'Singori',
   },
-  {
-    id: 'gangajal',
-    name: 'Gangajal | Sacred Water from the Himalayas',
+  gangajal: {
     image: packGangajal,
-    price: 149,
     compareAt: 219,
-    sizes: ['250ml', '500ml', '1 L'],
     rating: 4.8,
     tags: ['bestseller', 'handpicked'],
     categoryId: 'spiritual',
     subcategory: 'Gangajal',
   },
-  {
-    id: 'festival-hamper',
-    name: 'Festival Hamper | Honey, Sweets & Grains',
+  'festival-hamper': {
     image: packFestivalHamper,
-    price: 1299,
     compareAt: 1799,
-    sizes: ['Standard', 'Premium'],
     rating: 4.9,
     tags: ['bestseller', 'handpicked'],
     categoryId: 'gift-hampers',
     subcategory: 'Festival Hampers',
   },
-  {
-    id: 'organic-gift-box',
-    name: 'Organic Gift Box | Clean Pahadi Essentials',
+  'organic-gift-box': {
     image: packOrganicGiftBox,
-    price: 899,
     compareAt: 1249,
-    sizes: ['Box of 4', 'Box of 6'],
     rating: 4.8,
     tags: ['trending', 'handpicked'],
     categoryId: 'gift-hampers',
     subcategory: 'Organic Gift Boxes',
   },
-]
-
-/** Static stock defaults (aligned with server/services/inventory.js) */
-const STOCK_OVERRIDES = {
-  'pahadi-rajma': { stock: 40 },
-  'raw-honey': { stock: 28 },
-  'mandua-flour': { stock: 32 },
-  'gahat-dal': { stock: 30 },
-  'red-rice': { stockBySize: { '1 kg': 18, '2 kg': 8, '5 kg': 0 } },
-  'bal-mithai': { stockBySize: { '250g': 14, '500g': 0 } },
-  'herbal-tea': { stock: 36 },
-  'buransh-squash': { stock: 22 },
-  'pahadi-topi': { stock: 0 },
-  'ringaal-basket': { stockBySize: { Medium: 7, Large: 0 } },
-  jhangora: { stock: 26 },
-  singori: { stock: 20 },
-  gangajal: { stock: 50 },
-  'festival-hamper': { stockBySize: { Standard: 9, Premium: 0 } },
-  'organic-gift-box': { stockBySize: { 'Box of 4': 12, 'Box of 6': 2 } },
 }
+
+const productCatalog = PRODUCT_PRICING.map((item) => ({
+  ...item,
+  ...(PRODUCT_PRESENTATION[item.id] || {}),
+}))
+
+/** Static stock defaults (from shared; live stock overlays via API) */
+const STOCK_OVERRIDES = STOCK_DEFAULTS
+
 
 /** Live stock from API (GET /orders/stock) — overlays static defaults */
 let liveStockById = null
@@ -538,52 +474,11 @@ export const getStockStatus = (product, size) => {
   return { stock, inStock: true, lowStock: false, label: 'In stock' }
 }
 
-/** Convert size label into a comparable weight/quantity unit */
-const toBaseUnits = (amount, unit) => {
-  if (unit === 'kg' || unit === 'l') return amount * 1000
-  return amount
-}
-
-const sizeWeight = (size) => {
-  const raw = String(size).toLowerCase().replace(/\s+/g, '')
-
-  const multi = raw.match(/^(\d+)x(\d+(?:\.\d+)?)(g|kg|ml|l)$/)
-  if (multi) {
-    return Number(multi[1]) * toBaseUnits(Number(multi[2]), multi[3])
-  }
-
-  const measured = raw.match(/^(\d+(?:\.\d+)?)(g|kg|ml|l)$/)
-  if (measured) {
-    return toBaseUnits(Number(measured[1]), measured[2])
-  }
-
-  const pcs = raw.match(/^(\d+)pcs?$/)
-  if (pcs) return Number(pcs[1])
-
-  const named = {
-    freesize: 1,
-    medium: 1,
-    large: 1.35,
-    standard: 1,
-    premium: 1.4,
-    boxof4: 4,
-    boxof6: 6,
-    '108beads': 1,
-  }
-
-  return named[raw] || 1
-}
-
-const nicePrice = (value) => {
-  const n = Math.max(1, Math.round(value))
-  if (n < 20) return n
-  return Math.round(n / 10) * 10 - 1
-}
-
 /**
  * Size options with price for a product.
  * Base `price` / `compareAt` apply to the first size; larger sizes scale up with a small bulk discount.
  * Optional product.variants overrides auto pricing.
+ * Pricing math comes from @pahadlink/shared/catalog.
  */
 export const getProductVariants = (product) => {
   if (!product) return []

@@ -1,5 +1,9 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Project Pages URL: https://1mukeshr.github.io/pahadlink/
 const PAGES_BASE = '/pahadlink/'
@@ -8,6 +12,11 @@ export default defineConfig(({ command }) => ({
   // Absolute base avoids broken asset URLs on GitHub Pages.
   base: command === 'build' ? PAGES_BASE : '/',
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@pahadlink/shared': path.resolve(__dirname, 'shared'),
+    },
+  },
   build: {
     sourcemap: false,
     cssCodeSplit: true,

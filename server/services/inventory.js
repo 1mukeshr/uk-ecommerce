@@ -2,29 +2,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { getCatalogProduct } from './catalog.js'
+import { STOCK_DEFAULTS as DEFAULTS } from '../../shared/inventoryDefaults.js'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = join(__dirname, '../data')
 const STORE_PATH = join(DATA_DIR, 'inventory.json')
-
-/** Default stock by productId (mirrors storefront defaults / overrides) */
-const DEFAULTS = {
-  'pahadi-rajma': { stock: 40 },
-  'raw-honey': { stock: 28 },
-  'mandua-flour': { stock: 32 },
-  'gahat-dal': { stock: 30 },
-  'red-rice': { stockBySize: { '1 kg': 18, '2 kg': 8, '5 kg': 0 } },
-  'bal-mithai': { stockBySize: { '250g': 14, '500g': 0 } },
-  'herbal-tea': { stock: 36 },
-  'buransh-squash': { stock: 22 },
-  'pahadi-topi': { stock: 0 },
-  'ringaal-basket': { stockBySize: { Medium: 7, Large: 0 } },
-  'jhangora': { stock: 26 },
-  singori: { stock: 20 },
-  gangajal: { stock: 50 },
-  'festival-hamper': { stockBySize: { Standard: 9, Premium: 0 } },
-  'organic-gift-box': { stockBySize: { 'Box of 4': 12, 'Box of 6': 2 } },
-}
 
 function isCatalogProduct(productId) {
   return Boolean(getCatalogProduct(productId))

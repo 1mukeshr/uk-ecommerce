@@ -1,9 +1,9 @@
 /**
- * Shared roles - keep in sync with frontend src/config.js
+ * Backend constants — re-export shared domain rules.
  */
-export const ROLES = ['customer', 'seller', 'admin']
-
-export const DEFAULT_ROLE = 'customer'
-
-/** Max units of the same product one customer may buy (lifetime, excl. cancelled) */
-export const MAX_QTY_PER_ITEM_PER_CUSTOMER = 3
+export {
+  ROLE_VALUES as ROLES,
+  DEFAULT_ROLE,
+  MAX_QTY_PER_ITEM_PER_CUSTOMER,
+  PASSWORD_MIN_LENGTH,
+} from '../../shared/constants.js'

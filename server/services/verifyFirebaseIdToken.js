@@ -12,10 +12,8 @@ const JWKS = jose.createRemoteJWKSet(
  * @returns {Promise<object>} decoded JWT payload
  */
 export async function verifyFirebaseIdToken(idToken) {
-  const projectId =
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    'pahadlink-56803'
+  // Backend-only env (never read VITE_* — those are frontend build vars)
+  const projectId = process.env.FIREBASE_PROJECT_ID || 'pahadlink-56803'
 
   if (!idToken || typeof idToken !== 'string') {
     const err = new Error('Missing Firebase ID token')

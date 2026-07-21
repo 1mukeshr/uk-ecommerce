@@ -1,6 +1,6 @@
 /**
  * Public Firebase Web config (safe to ship in the browser).
- * Kept in source so GitHub Pages / CI builds never miss VITE_FIREBASE_* secrets.
+ * Kept in source so GitHub Pages / CI builds never miss VITE_FIREBASE_* values.
  */
 export const FIREBASE_WEB_CONFIG = {
   apiKey: 'AIzaSyCa1V4GXz7fpGHQ_0gKNHkW5qQfVnWqeok',

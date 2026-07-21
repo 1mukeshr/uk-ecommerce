@@ -56,11 +56,24 @@ npm run test:auth -- https://YOUR-SERVICE.onrender.com/api
 
 ```
 pahadlink/
-├── src/          # React storefront
-├── server/       # Express API (auth, orders, crm, contact)
+├── src/          # Frontend only (React / Vite / browser)
+├── server/       # Backend only (Express / Mongo / JWT / SMTP)
+├── shared/       # Domain rules used by BOTH (coupons, prices, roles)
+├── public/       # Static assets + runtime-config.json
+├── scripts/      # Deploy / tooling scripts (not app runtime)
 ├── render.yaml   # Render Blueprint for hosted API
 └── .github/workflows/deploy-pages.yml
 ```
+
+### Separation of concerns
+
+| Layer | May import | Must not import |
+|-------|------------|-----------------|
+| `src/` | `shared/`, browser libs | `server/` |
+| `server/` | `shared/`, Node libs | `src/` |
+| `shared/` | nothing from src/server | React, Express, DOM |
+
+Frontend talks to backend **only over HTTP** (`/api` …). Never import server modules into React.
 
 ## Where to edit what
 
@@ -69,6 +82,9 @@ pahadlink/
 | New page route | `src/routes/AppRoutes.jsx` + `src/config` |
 | Login / register UI | `src/pages/auth/` |
 | Header / footer | `src/components/layout/` |
-| API helpers | `src/services/` |
+| API helpers (HTTP client) | `src/services/` |
+| Product images / tags / copy | `src/data/siteData.js` |
+| Prices / sizes / coupons / qty limits | `shared/` |
 | Mongo models | `server/models/` |
 | API endpoints | `server/routes/` |
+| Live inventory store | `server/services/inventory.js` |

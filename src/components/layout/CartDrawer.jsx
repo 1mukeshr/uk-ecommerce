@@ -8,10 +8,9 @@ import {
   requestOpenAddressPicker,
 } from '../../utils/locationStorage'
 import { CartIcon, CloseIcon, TruckIcon, ArrowRightIcon } from '../icons'
+import { FREE_SHIP_AT, calcShipping } from '../../data/coupons'
 
 const formatPrice = (n) => `₹${n.toLocaleString('en-IN')}`
-const FREE_SHIP_AT = 499
-const SHIPPING_FEE = 49
 
 /**
  * Right-side bag drawer - primary bag UX (no full bag page needed)
@@ -31,7 +30,7 @@ const CartDrawer = () => {
   const panelRef = useRef(null)
   const wasOpen = useRef(false)
 
-  const shipping = cart.length === 0 ? 0 : cartTotal >= FREE_SHIP_AT ? 0 : SHIPPING_FEE
+  const shipping = cart.length === 0 ? 0 : calcShipping(cartTotal)
   const payable = cartTotal + shipping
   const shipLeft = Math.max(0, FREE_SHIP_AT - cartTotal)
   const shipProgress = Math.min(100, Math.round((cartTotal / FREE_SHIP_AT) * 100))

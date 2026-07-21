@@ -1,5 +1,7 @@
 import mongoose from 'mongoose'
 
+export { buildRatingSummary } from '../../shared/ratings.js'
+
 const reviewSchema = new mongoose.Schema(
   {
     productId: {
@@ -78,23 +80,6 @@ reviewSchema.methods.toSafeJSON = function toSafeJSON() {
     verified: Boolean(this.verified),
     createdAt: this.createdAt,
   }
-}
-
-export function buildRatingSummary(reviews = []) {
-  const distribution = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
-  let total = 0
-
-  for (const review of reviews) {
-    const rating = Math.min(5, Math.max(1, Math.round(Number(review.rating) || 0)))
-    if (!rating) continue
-    distribution[rating] += 1
-    total += rating
-  }
-
-  const count = reviews.length
-  const average = count ? Math.round((total / count) * 10) / 10 : 0
-
-  return { average, count, distribution }
 }
 
 const Review = mongoose.models.Review || mongoose.model('Review', reviewSchema)

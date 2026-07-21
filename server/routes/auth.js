@@ -5,6 +5,7 @@ import { ROLES } from '../models/User.js'
 import { users } from '../services/users.js'
 import { protect, authorize, signToken } from '../middleware/auth.js'
 import { isFileDbMode } from '../config/db.js'
+import { PASSWORD_MIN_LENGTH } from '../config/constants.js'
 import { verifyFirebaseIdToken } from '../services/verifyFirebaseIdToken.js'
 import { sendMail } from '../services/mail.js'
 
@@ -40,8 +41,10 @@ router.post('/register', async (req, res) => {
       username = `${username}${Math.floor(100 + Math.random() * 900)}`
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' })
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      return res.status(400).json({
+        message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+      })
     }
 
     const emailTaken = await users.findOne({ email })
@@ -166,8 +169,10 @@ router.post('/reset-password', async (req, res) => {
     if (!token || !password) {
       return res.status(400).json({ message: 'Token and new password are required' })
     }
-    if (password.length < 6) {
-      return res.status(400).json({ message: 'Password must be at least 6 characters' })
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      return res.status(400).json({
+        message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters`,
+      })
     }
 
     const hashed = crypto.createHash('sha256').update(token).digest('hex')

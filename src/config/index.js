@@ -1,10 +1,12 @@
 /**
  * App settings - change here once
  */
+import { MAX_QTY_PER_ITEM_PER_CUSTOMER as SHARED_MAX_QTY } from '@pahadlink/shared/constants'
+
 export const APP_NAME = 'PahadLink'
 
 /** Max units of the same product one customer may buy (cart + lifetime orders) */
-export const MAX_QTY_PER_ITEM_PER_CUSTOMER = 3
+export const MAX_QTY_PER_ITEM_PER_CUSTOMER = SHARED_MAX_QTY
 
 export {
   API_BASE_URL,

@@ -1,0 +1,15 @@
+{
+  "name": "@pahadlink/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain rules shared by frontend (src/) and backend (server/). No React, no Express.",
+  "exports": {
+    ".": "./index.js",
+    "./constants": "./constants.js",
+    "./coupons": "./coupons.js",
+    "./catalog": "./catalog.js",
+    "./inventoryDefaults": "./inventoryDefaults.js",
+    "./ratings": "./ratings.js"
+  }
+}

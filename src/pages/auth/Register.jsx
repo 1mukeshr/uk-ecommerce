@@ -9,6 +9,7 @@ import {
   postCheckoutLoginState,
   resolvePostAuthPath,
 } from '../../config'
+import { PASSWORD_MIN_LENGTH } from '@pahadlink/shared/constants'
 
 function resolveReturnPath(from) {
   if (!from) return ''
@@ -62,8 +63,8 @@ const Register = () => {
       return
     }
 
-    if (form.password.length < 6) {
-      setMessage('Password must be at least 6 characters')
+    if (form.password.length < PASSWORD_MIN_LENGTH) {
+      setMessage(`Password must be at least ${PASSWORD_MIN_LENGTH} characters`)
       return
     }
 
