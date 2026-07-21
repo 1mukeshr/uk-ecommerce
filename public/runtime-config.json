@@ -1,6 +1,7 @@
 {
-  "apiUrl": "https://governing-irc-corps-nextel.trycloudflare.com/api",
+  "apiUrl": "https://pahadlink-api.onrender.com/api",
   "apiUrls": [
+    "https://pahadlink-api.onrender.com/api",
     "https://governing-irc-corps-nextel.trycloudflare.com/api",
     "https://pahadlink-api.loca.lt/api"
   ],
