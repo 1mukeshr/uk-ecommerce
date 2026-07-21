@@ -41,16 +41,18 @@ export async function signInWithGoogleFirebase() {
     const raw = String(error?.message || '')
 
     if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      throw new Error('Google sign-in was cancelled')
+      throw new Error('Google sign-in was cancelled', { cause: error })
     }
     if (code === 'auth/configuration-not-found') {
       throw new Error(
-        'Firebase Authentication is not set up. In Firebase Console → Authentication, click Get started, then enable Google sign-in.'
+        'Firebase Authentication is not set up. In Firebase Console → Authentication, click Get started, then enable Google sign-in.',
+        { cause: error },
       )
     }
     if (code === 'auth/operation-not-allowed') {
       throw new Error(
-        'Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google.'
+        'Google sign-in is disabled. Enable it in Firebase Console → Authentication → Sign-in method → Google.',
+        { cause: error },
       )
     }
     if (
@@ -59,14 +61,15 @@ export async function signInWithGoogleFirebase() {
       /domain.*not (authorized|whitelisted)/i.test(raw)
     ) {
       throw new Error(
-        `This site is blocked for Google login. ${AUTH_DOMAIN_HELP}`
+        `This site is blocked for Google login. ${AUTH_DOMAIN_HELP}`,
+        { cause: error },
       )
     }
     // Surface Firebase's own message when it already names the fix
     if (/authorized domains/i.test(raw)) {
-      throw new Error(`${raw} ${AUTH_DOMAIN_HELP}`)
+      throw new Error(`${raw} ${AUTH_DOMAIN_HELP}`, { cause: error })
     }
-    throw new Error(raw || 'Google sign-in failed')
+    throw new Error(raw || 'Google sign-in failed', { cause: error })
   }
 }
 

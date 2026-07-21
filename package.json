@@ -19,7 +19,8 @@
     "seed:admin": "node server/scripts/seedAdmin.js",
     "seed:seller": "node server/scripts/seedSeller.js",
     "seed:crm": "node server/scripts/seedAdminCrm.js",
-    "test:auth": "node scripts/test-auth.mjs"
+    "test:auth": "node scripts/test-auth.mjs",
+    "test:full": "node scripts/test-full.mjs"
   },
   "dependencies": {
     "@pahadlink/shared": "file:./shared",

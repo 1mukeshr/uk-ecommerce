@@ -16,8 +16,10 @@ export function buildRatingSummary(reviews = []) {
   let count = 0
 
   for (const review of reviews) {
-    const rating = Math.min(5, Math.max(1, Math.round(Number(review.rating) || 0)))
-    if (!rating) continue
+    const raw = Number(review?.rating)
+    // Skip missing / invalid before clamping (0 must not become 1)
+    if (!Number.isFinite(raw) || raw <= 0) continue
+    const rating = Math.min(5, Math.max(1, Math.round(raw)))
     distribution[rating] += 1
     total += rating
     count += 1

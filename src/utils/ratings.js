@@ -59,15 +59,6 @@ function getLocalReviews(productId) {
   return Array.isArray(list) ? list : []
 }
 
-function saveLocalReview(productId, review) {
-  const store = readLocalStore()
-  const existing = Array.isArray(store[productId]) ? store[productId] : []
-  const next = [review, ...existing.filter((item) => item.id !== review.id)]
-  store[productId] = next.slice(0, 80)
-  writeLocalStore(store)
-  return next
-}
-
 /** Deterministic seed reviews so every product has ratings out of 5 */
 export function getSeedReviewsForProduct(product) {
   if (!product?.id) return []

@@ -88,7 +88,7 @@ export async function submitProductReview({
       summary: buildRatingSummary(reviews),
       message: data.message || 'Review saved',
     }
-  } catch (error) {
+  } catch {
     // Offline / API down — keep review locally so UX still works
     const localReview = {
       id: `local-${productId}-${Date.now()}`,

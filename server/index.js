@@ -71,14 +71,16 @@ function healthPayload() {
   const dbState = mongoose.connection.readyState
   const usingFile = fileUserStore.enabled
   const mongoOk = dbState === 1
-  // Orders/CRM need Mongo. File-store auth alone is not a healthy full API.
+  const authReady = mongoOk || usingFile
+  // Service is healthy when auth can run (Mongo or file-store).
+  // ordersReady stays false without Mongo so clients know checkout needs Atlas.
   return {
-    ok: mongoOk,
+    ok: authReady,
     service: 'pahadlink-api',
     database: mongoOk ? 'Pahadi_link' : usingFile ? 'file-store' : 'unavailable',
     mongo: mongoOk ? 'connected' : usingFile ? 'file-fallback' : 'disconnected',
     ordersReady: mongoOk,
-    authReady: mongoOk || usingFile,
+    authReady,
     time: new Date().toISOString(),
   }
 }
