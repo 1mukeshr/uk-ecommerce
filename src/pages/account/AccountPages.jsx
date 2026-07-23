@@ -68,9 +68,6 @@ const formatDateTime = (iso) => {
 const paymentLabel = (id) => {
   if (id === 'upi') return 'UPI'
   if (id === 'card') return 'Card'
-  if (id === 'netbanking') return 'Net Banking'
-  if (id === 'wallet') return 'Wallet'
-  if (id === 'razorpay') return 'Online payment'
   return 'Cash on delivery'
 }
 

@@ -26,9 +26,8 @@ services:
         value: Pahadi_link
       - key: USE_FILE_DB
         value: "false"
-      # Prefer Atlas; if URI missing/wrong, still boot so login can use file fallback.
       - key: ALLOW_FILE_DB_FALLBACK
-        value: "true"
+        value: "false"
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -53,8 +52,3 @@ services:
         sync: false
       - key: ORDER_NOTIFY_EMAIL
         value: admin@pahadlink.com
-      # Razorpay online payments (UPI / cards / netbanking / wallets)
-      - key: RAZORPAY_KEY_ID
-        sync: false
-      - key: RAZORPAY_KEY_SECRET
-        sync: false
